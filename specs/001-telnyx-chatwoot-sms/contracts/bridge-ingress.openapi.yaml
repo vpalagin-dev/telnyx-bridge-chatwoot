@@ -1,0 +1,337 @@
+openapi: 3.1.0
+info:
+  title: JAMA Telnyx-Chatwoot Bridge Ingress
+  version: 0.1.0
+  description: >-
+    Public HTTP surface for signed provider webhooks and health checks.
+    There is deliberately no public or authenticated send endpoint.
+tags:
+  - name: health
+  - name: telnyx
+  - name: chatwoot
+paths:
+  /health/live:
+    get:
+      tags: [health]
+      operationId: getLiveness
+      summary: Process liveness
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: getReadiness
+      summary: Database, schema, configuration, and authoritative audit readiness
+      description: >-
+        Returns 200 only when the external JSON readiness artifact validates against
+        the committed schema, is unexpired with status pass, confirms the observed
+        Chatwoot HMAC contract, and its current Chatwoot, Telnyx sender/profile and
+        ingress fingerprints match. Markdown evidence is never authoritative.
+      responses:
+        '200':
+          description: Ready to accept webhooks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Not ready; response contains only sanitized component states.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /webhooks/telnyx:
+    post:
+      tags: [telnyx]
+      operationId: receiveTelnyxWebhook
+      summary: Receive a signed Telnyx Messaging API v2 event
+      description: >-
+        Before reading or persisting the delivery, runtime requires a valid current
+        readiness artifact; otherwise it returns 503 and Telnyx may retry. When ready,
+        the implementation must read the exact raw UTF-8 JSON body before parsing.
+        It verifies Ed25519 over `${telnyx-timestamp}|${raw_body}`, enforces
+        symmetric 300-second clock skew, validates only the generic Telnyx event
+        envelope, encrypts the raw payload, inserts/deduplicates it durably,
+        commits, and only then returns 2xx. Processing and event-type/business
+        filtering are asynchronous. Authentic unsupported event types are not
+        enum-rejected here; the worker projects them to durable `ignored`.
+      parameters:
+        - in: header
+          name: telnyx-signature-ed25519
+          required: true
+          schema:
+            type: string
+          description: Standard Base64 Ed25519 signature.
+        - in: header
+          name: telnyx-timestamp
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]+$'
+          description: Unix timestamp in seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelnyxWebhook'
+      responses:
+        '200':
+          description: Event was durably accepted or recognized as a duplicate. Authentic unsupported events receive this same HTTP 200 and are projected to durable ignored by the worker after receipt; ignored is not a route-side business classification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookReceipt'
+        '400':
+          description: Malformed envelope or unsupported body encoding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '401':
+          description: Signature headers are missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '403':
+          description: Signature timestamp is stale/future outside policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '503':
+          description: Runtime readiness is invalid or durable commit did not occur; Telnyx may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+  /webhooks/chatwoot:
+    post:
+      tags: [chatwoot]
+      operationId: receiveChatwootWebhook
+      summary: Receive a signed event from the configured local Chatwoot
+      description: >-
+        This endpoint is inactive until live audit confirms HMAC support and the
+        exact observed contract is recorded in a valid current readiness artifact.
+        Unsupported HMAC blocks activation; bearer-only, IP allowlisting and unsigned
+        delivery are not fallbacks. When ready, the implementation verifies the
+        observed local HMAC contract over exact raw bytes, enforces its audited
+        freshness/replay policy, validates only a generic event envelope,
+        encrypts and durably inserts/deduplicates the delivery, commits, and
+        returns 2xx. Account/inbox/event/message/sender/conversation filtering is
+        asynchronous in the worker. Authentic unsupported or irrelevant events
+        are durably projected to `ignored` and never reach Telnyx.
+      x-chatwoot-signing-contract: live-audit-required
+      x-activation-rule: >-
+        Regenerate/finalize header parameters after the installed local Chatwoot HMAC
+        contract is captured in the authoritative readiness artifact. Until then the
+        endpoint must return sanitized 503 and perform no durable receipt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatwootWebhookEnvelope'
+      responses:
+        '200':
+          description: Delivery was durably accepted or deduplicated. Authentic irrelevant/unsupported deliveries receive HTTP 200 here and are projected to durable ignored asynchronously by the worker.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookReceipt'
+        '400':
+          description: Malformed envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '401':
+          description: Signature missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '403':
+          description: Timestamp outside freshness policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+        '503':
+          description: Runtime readiness is invalid/unsupported or durable commit did not occur; Chatwoot may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeError'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, not_ready]
+        components:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, failed, missing, invalid, expired, unresolved, mismatch, unsupported]
+          description: Sanitized state only; no URLs, credentials, fingerprints, phones, or payloads.
+    WebhookReceipt:
+      type: object
+      additionalProperties: false
+      required: [outcome, receipt_id]
+      properties:
+        outcome:
+          type: string
+          enum: [accepted, duplicate]
+          description: HTTP receipt result only. The worker may later project the durable receipt to ignored without changing the HTTP 200 ACK.
+        receipt_id:
+          type: string
+          format: uuid
+          description: Internal safe durable-receipt correlation ID, including receipts later projected to ignored.
+    SafeError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_signature
+            - stale_timestamp
+            - temporarily_unavailable
+        correlation_id:
+          type: string
+          format: uuid
+    TelnyxWebhook:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, event_type, occurred_at, record_type, payload]
+          properties:
+            id:
+              type: string
+              format: uuid
+            event_type:
+              type: string
+              minLength: 1
+              description: Generic provider event type; worker recognizes supported message events and durably ignores authentic unsupported values.
+            occurred_at:
+              type: string
+              format: date-time
+            record_type:
+              const: event
+            payload:
+              type: object
+              additionalProperties: true
+              description: Generic event payload. Message-specific safety and scope fields are validated by the worker before side effects.
+        meta:
+          type: object
+          additionalProperties: true
+          properties:
+            attempt:
+              type: integer
+              minimum: 1
+            delivered_to:
+              type: string
+              format: uri
+      additionalProperties: true
+    TelnyxMessagePayload:
+      type: object
+      required: [id, direction, from, to, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        from:
+          type: object
+          required: [phone_number]
+          properties:
+            phone_number:
+              type: string
+          additionalProperties: true
+        to:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [phone_number]
+            properties:
+              phone_number:
+                type: string
+              status:
+                type: string
+            additionalProperties: true
+        text:
+          type: [string, 'null']
+          description: Transient secret data; never persist or log in plaintext.
+        type:
+          type: string
+          enum: [SMS, MMS]
+        messaging_profile_id:
+          type: string
+        received_at:
+          type: [string, 'null']
+          format: date-time
+        sent_at:
+          type: [string, 'null']
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+        autoresponse_type:
+          type: [string, 'null']
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: true
+    ChatwootWebhookEnvelope:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          minLength: 1
+          description: Generic local Chatwoot event name. Worker-side schemas decide whether it is an eligible human outbound action.
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+          description: Optional event/message resource ID used for dedupe when the audited local payload provides it.
+        created_at:
+          oneOf:
+            - type: string
+            - type: integer
+        account:
+          type: object
+          additionalProperties: true
+        inbox:
+          type: object
+          additionalProperties: true
+        conversation:
+          type: object
+          additionalProperties: true
+        sender:
+          type: object
+          additionalProperties: true
+        content:
+          type: [string, 'null']
+          description: Transient secret data; never persist or log in plaintext.
+      additionalProperties: true

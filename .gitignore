@@ -1,0 +1,44 @@
+# secrets and local env
+.env
+.env.*
+
+# dependencies and build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# runtime data
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+npm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# personal IDE / agent tool caches
+.idea/
+.vscode/
+*.code-workspace
+.cursor/
+.claude/
+.codex/
+.agents/
+.windsurf/
+.gemini/
+
+# Spec Kit local/runtime only
+.specify/feature.json
+.specify/extensions/.cache/
+.specify/extensions/.registry
+
+# tunnels / local process files
+.ngrok*
+*.pid

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "id": "evt-inbound-1",
+    "event_type": "message.received",
+    "occurred_at": "2026-01-01T00:00:00.000Z",
+    "payload": {
+      "id": "msg-inbound-1",
+      "direction": "inbound",
+      "type": "SMS",
+      "from": { "phone_number": "+1 (415) 555-2671" },
+      "to": [{ "phone_number": "+15551234567" }],
+      "text": "Hello from fixture"
+    }
+  }
+}

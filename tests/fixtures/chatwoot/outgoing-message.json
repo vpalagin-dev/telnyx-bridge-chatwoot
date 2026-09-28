@@ -1,0 +1,11 @@
+{
+  "event": "message_created",
+  "id": 9001,
+  "message_type": "outgoing",
+  "private": false,
+  "content": "Reply from fixture",
+  "account": { "id": 1 },
+  "inbox": { "id": 2 },
+  "conversation": { "id": 20 },
+  "sender": { "id": 7, "type": "user" }
+}

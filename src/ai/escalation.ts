@@ -1,0 +1,4 @@
+import type { AiConversationState,AiOutcome } from './types.js';
+export type EscalationCategory='billing'|'complaint'|'safety'|'vip'|'partnership'|'press'|'unsupported';
+export function classifyEscalation(text:string):EscalationCategory|null{const t=text.toLowerCase();if(/refund|payment|chargeback|billing/.test(t))return 'billing';if(/complaint|angry|bad service/.test(t))return 'complaint';if(/safety|emergency|harass|threat/.test(t))return 'safety';if(/vip|artist|talent|special access/.test(t))return 'vip';if(/partner|sponsor/.test(t))return 'partnership';if(/press|media|public relations/.test(t))return 'press';return null;}
+export function transitionForOutcome(o:AiOutcome):{state:AiConversationState;outcome:AiOutcome}{return o==='answered'?{state:'ai_active',outcome:o}:{state:'waiting_for_human',outcome:o};}

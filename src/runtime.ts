@@ -1,31 +1,4 @@
-import { buildApp } from './app.js';
-import { HttpChatwootClient } from './chatwoot/http-client.js';
-import type { BridgeConfig } from './config/env.js';
-import { BridgeStore } from './db/store.js';
-import type { TelnyxClient } from './telnyx/client.js';
-import { HttpTelnyxClient } from './telnyx/http-client.js';
-
-export function createTelnyxClient(config: BridgeConfig): TelnyxClient {
-  if (config.outbound.mode === 'fake') {
-    return {
-      async sendSms() {
-        throw new Error('Telnyx HTTP API is disabled while OUTBOUND_MODE=fake');
-      },
-    };
-  }
-  return new HttpTelnyxClient({ apiKey: config.telnyx.apiKey });
-}
-
-export function buildRuntime(config: BridgeConfig) {
-  const store = new BridgeStore(config.databasePath);
-  const chatwoot = new HttpChatwootClient({
-    baseUrl: config.chatwoot.url,
-    accountId: config.chatwoot.accountId,
-    inboxId: config.chatwoot.inboxId,
-    apiToken: config.chatwoot.apiToken,
-  });
-  const telnyx = createTelnyxClient(config);
-  const app = buildApp({ config, store, chatwoot, telnyx });
-  app.addHook('onClose', async () => store.close());
-  return app;
-}
+import {buildApp} from './app.js';import {HttpChatwootClient} from './chatwoot/http-client.js';import type {BridgeConfig} from './config/env.js';import {BridgeStore} from './db/store.js';import type {TelnyxClient} from './telnyx/client.js';import {HttpTelnyxClient} from './telnyx/http-client.js';import {FakeOpenAiAdapter} from './ai/openai-fake.js';import {LiveOpenAiAdapter} from './ai/openai-live.js';import {createAiTelnyxDispatcher} from './ai/telnyx-dispatch.js';
+const defaults=(c:BridgeConfig)=>({...c,ai:c.ai??{enabled:false,providerMode:'fake' as const,liveOpenAiEnabled:false,model:'gpt-4o-mini',maxInputTokens:2048,maxOutputTokens:256,timeoutMs:5000,knowledgeRoot:'specs/002-jama-ai-assistant-smoke/knowledge',safeFallbackText:"I'm not sure about that. Let me get someone from the JAMA team to help you.",escalationEnabled:true},aiOutbound:c.aiOutbound??{liveSmsApproved:false,recipientAllowlist:[]}});
+export function createTelnyxClient(c:BridgeConfig):TelnyxClient{return c.outbound.mode==='fake'?{async sendSms(){throw new Error('Telnyx HTTP API is disabled while OUTBOUND_MODE=fake')}}:new HttpTelnyxClient({apiKey:c.telnyx.apiKey});}
+export function buildRuntime(raw:BridgeConfig){const c=defaults(raw),store=new BridgeStore(c.databasePath),chatwoot=new HttpChatwootClient({baseUrl:c.chatwoot.url,accountId:c.chatwoot.accountId,inboxId:c.chatwoot.inboxId,apiToken:c.chatwoot.apiToken}),telnyx=createTelnyxClient(c),openai=c.ai!.enabled&&c.ai!.providerMode==='live'&&c.ai!.liveOpenAiEnabled&&c.ai!.openAiApiKey?new LiveOpenAiAdapter({apiKey:c.ai!.openAiApiKey,model:c.ai!.model,timeoutMs:c.ai!.timeoutMs}):new FakeOpenAiAdapter({kind:'fallback',text:c.ai!.safeFallbackText,escalate:true}),app=buildApp({config:c,store,chatwoot,telnyx,ai:{openai,history:chatwoot,telnyx:createAiTelnyxDispatcher(c,telnyx,store)}});app.addHook('onClose',async()=>store.close());return app;}

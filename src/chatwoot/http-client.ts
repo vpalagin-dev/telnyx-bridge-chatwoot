@@ -1,5 +1,5 @@
 import { normalizePhone } from '../domain/phone.js';
-import type { ChatwootClient, ChatwootContact, ChatwootConversation } from './client.js';
+import type { ChatwootClient, ChatwootContact, ChatwootConversation, ChatwootAiHistoryWriter, AiHistoryMetadata } from './client.js';
 
 type FetchResponse = { ok: boolean; status: number; json(): Promise<unknown> };
 type Fetcher = (url: string, init?: RequestInit) => Promise<FetchResponse>;
@@ -26,7 +26,7 @@ function inboxBinding(source: any, inboxId: number): { source_id: string } | und
 }
 
 
-export class HttpChatwootClient implements ChatwootClient {
+export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWriter {
   readonly #options: Options;
   readonly #fetcher: Fetcher;
 
@@ -115,6 +115,15 @@ export class HttpChatwootClient implements ChatwootClient {
       `/api/v1/accounts/${this.#options.accountId}/conversations/${conversationId}/messages`,
       { method: 'POST', body: JSON.stringify({ content, message_type: 'incoming', private: false }) },
     );
+    return { id: message.id };
+  }
+
+  async createAiHistoryMessage(conversationId: number, text: string, metadata: AiHistoryMetadata): Promise<{ id: number }> {
+    const message = await this.#request(
+      `/api/v1/accounts/${this.#options.accountId}/conversations/${conversationId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: text, message_type: 'outgoing', private: false, custom_attributes: metadata }) },
+    );
+    if (typeof message?.id !== 'number') throw new Error('Chatwoot AI history response lacked an id');
     return { id: message.id };
   }
 }

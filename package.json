@@ -14,12 +14,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "test:ai": "vitest run tests/unit/ai tests/contract/ai-openai-adapter.test.ts tests/contract/chatwoot-ai-history.test.ts tests/contract/marker-aware-webhook.test.ts tests/integration/ai --exclude tests/integration/ai/live-openai.test.ts",
+    "test:live-ai": "vitest run tests/integration/ai/live-openai.test.ts"
   },
   "dependencies": {
     "fastify": "5.12.5",
     "pino": "9.14.0",
-    "zod": "4.1.12"
+    "zod": "4.1.12",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
     "@types/node": "24.10.0",

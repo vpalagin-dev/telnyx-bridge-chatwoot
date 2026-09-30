@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ChatwootClient } from '../chatwoot/client.js';
 import type { BridgeStore } from '../db/store.js';
+import type { AiProcessResult } from '../ai/types.js';
 import { normalizePhone } from '../domain/phone.js';
 import { classifyConsentCommand } from '../domain/suppression.js';
 
@@ -23,6 +24,7 @@ type Dependencies = {
   store: BridgeStore;
   chatwoot: ChatwootClient;
   senderNumber: string;
+  postInbound?: (input: { inboundIdentity: string; telnyxEventId: string; telnyxMessageId: string; conversationId: number; inboundMessageId: number; recipient: string; customerMessage: string }) => Promise<AiProcessResult>;
 };
 
 export type InboundResult =
@@ -75,6 +77,9 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
   try {
     const message = await dependencies.chatwoot.createIncomingMessage(conversation.id, data.payload.text);
     dependencies.store.setEventStatus('telnyx', data.id, 'completed');
+    if (dependencies.postInbound) {
+      try { await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch { /* AI failure is isolated from inbound ACK */ }
+    }
     return {
       outcome: 'created',
       telnyxEventId: data.id,

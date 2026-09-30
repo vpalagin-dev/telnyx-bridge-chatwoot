@@ -1,0 +1,3 @@
+import type { OpenAiDecision } from './types.js';
+export type ValidatedAiDecision={kind:'answer';text:string}|{kind:'fallback';text:string;escalate:true}|{kind:'error';reason:'validation'};
+export function validateAiDecision(d:OpenAiDecision,p:{fallback:string;maxChars:number}):ValidatedAiDecision{if(d.kind==='error')return {kind:'error',reason:'validation'};const t=d.text.trim();if(!t||t.length>p.maxChars||/[\\[{<]|ignore (all|previous)|system prompt/i.test(t))return {kind:'fallback',text:p.fallback,escalate:true};return d.kind==='fallback'?{kind:'fallback',text:p.fallback,escalate:true}:{kind:'answer',text:t};}

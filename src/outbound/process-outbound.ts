@@ -34,6 +34,9 @@ export type OutboundResult =
 export async function processChatwootOutbound(input: unknown, dependencies: Dependencies): Promise<OutboundResult> {
   const event = outboundEventSchema.parse(input);
   const actionId = String(event.id);
+  const marker = (event as any).custom_attributes?.ai_generated;
+  if (marker === true) return { outcome: 'ignored', actionId };
+  if (marker !== undefined) return { outcome: 'unknown_needs_review', actionId };
   const hasForbiddenAutomationMarker =
     event.campaign_id != null ||
     event.automation_rule_id != null ||

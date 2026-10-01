@@ -35,7 +35,7 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
   const event = outboundEventSchema.parse(input);
   const actionId = String(event.id);
   const marker = (event as any).custom_attributes?.ai_generated;
-  if (marker === true) return { outcome: 'ignored', actionId };
+  if (marker === true || dependencies.store.isAiHistoryMessage(event.id)) return { outcome: 'ignored', actionId };
   if (marker !== undefined) return { outcome: 'unknown_needs_review', actionId };
   const hasForbiddenAutomationMarker =
     event.campaign_id != null ||

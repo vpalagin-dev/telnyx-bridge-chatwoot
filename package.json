@@ -16,7 +16,8 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:ai": "vitest run tests/unit/ai tests/contract/ai-openai-adapter.test.ts tests/contract/chatwoot-ai-history.test.ts tests/contract/marker-aware-webhook.test.ts tests/integration/ai --exclude tests/integration/ai/live-openai.test.ts",
-    "test:live-ai": "vitest run tests/integration/ai/live-openai.test.ts"
+    "test:live-ai": "vitest run tests/integration/ai/live-openai.test.ts",
+    "test:local-live-ai-chatwoot": "vitest run tests/integration/ai/local-live-chatwoot.test.ts"
   },
   "dependencies": {
     "fastify": "5.12.5",

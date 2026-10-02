@@ -107,6 +107,31 @@ describe('webhook routes', () => {
     expect(telnyx.calls).toHaveLength(1);
   });
 
+  it('accepts Chatwoot signatures with the sha256 prefix used by Chatwoot', async () => {
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const store = new BridgeStore(':memory:');
+    store.bindConversation(20, '+14155552671');
+    const telnyx = new FakeTelnyx();
+    const cfg = config(publicKey.export({ type: 'spki', format: 'pem' }).toString());
+    const app = buildApp({ config: cfg, store, chatwoot: new FakeChatwoot(), telnyx });
+    resources.push(app, store);
+    const body = fixture('../fixtures/chatwoot/outgoing-message.json');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac('sha256', cfg.chatwoot.webhookSecret!).update(`${timestamp}.${body}`).digest('hex');
+
+    const response = await app.inject({
+      method: 'POST', url: '/webhooks/chatwoot', payload: body,
+      headers: {
+        'content-type': 'application/json',
+        'x-chatwoot-timestamp': timestamp,
+        'x-chatwoot-signature': `sha256=${signature}`,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(telnyx.calls).toHaveLength(1);
+  });
+
   it('never calls the Telnyx HTTP API for Chatwoot outbound in fake mode', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
     const store = new BridgeStore(':memory:');

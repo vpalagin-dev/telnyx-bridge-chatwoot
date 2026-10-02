@@ -36,7 +36,7 @@ export function verifyChatwootWebhook(input: {
   if (!input.secret) return true;
   if (!input.timestamp || !input.signature || !isFresh(input.timestamp, input.toleranceSeconds)) return false;
   const expected = createHmac('sha256', input.secret).update(`${input.timestamp}.${input.rawBody}`).digest('hex');
-  const supplied = input.signature.toLowerCase();
+  const supplied = input.signature.replace(/^sha256=/i, '').toLowerCase();
   if (expected.length !== supplied.length) return false;
   return timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
 }

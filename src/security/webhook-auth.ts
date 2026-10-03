@@ -1,4 +1,4 @@
-import { createHmac, createPublicKey, timingSafeEqual, verify } from 'node:crypto';
+import { createHash, createHmac, createPublicKey, timingSafeEqual, verify } from 'node:crypto';
 
 const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
 
@@ -20,13 +20,46 @@ function isFresh(timestamp: string, toleranceSeconds: number, now = Date.now()):
   return Number.isFinite(seconds) && Math.abs(Math.floor(now / 1000) - seconds) <= toleranceSeconds;
 }
 
-export function verifyTelnyxWebhook(input: {
+type TelnyxWebhookInput = {
   rawBody: string;
   timestamp: string | undefined;
   signature: string | undefined;
   publicKey: string | undefined;
   toleranceSeconds: number;
-}): boolean {
+};
+
+export function debugTelnyxWebhook(input: TelnyxWebhookInput, verified: boolean): void {
+  if (process.env.TELNYX_WEBHOOK_DEBUG !== 'true') return;
+  const publicKey = input.publicKey?.trim() ?? '';
+  const compactKey = publicKey.replace(/\s+/g, '');
+  let publicKeyBytes: number | null = null;
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(compactKey)) {
+    try {
+      publicKeyBytes = Buffer.from(compactKey, 'base64').length;
+    } catch {
+      publicKeyBytes = null;
+    }
+  }
+  const signature = input.signature ?? '';
+  const diagnostic = {
+    event: 'telnyx_webhook_auth',
+    verified,
+    publicKeyPresent: Boolean(publicKey),
+    publicKeyFormat: publicKey.includes('BEGIN') ? 'pem' : publicKeyBytes === 32 ? 'base64_raw_32_bytes' : 'other',
+    publicKeyLength: publicKey.length,
+    publicKeyBytes,
+    publicKeyFingerprint: publicKey ? createHash('sha256').update(publicKey).digest('hex').slice(0, 12) : null,
+    timestampPresent: Boolean(input.timestamp),
+    timestampFresh: Boolean(input.timestamp && isFresh(input.timestamp, input.toleranceSeconds)),
+    signaturePresent: Boolean(signature),
+    signatureLength: signature.length,
+    signatureLooksBase64: /^[A-Za-z0-9+/]+={0,2}$/.test(signature),
+    rawBodyLength: input.rawBody.length,
+  };
+  process.stderr.write(`[telnyx-webhook-debug] ${JSON.stringify(diagnostic)}\n`);
+}
+
+export function verifyTelnyxWebhook(input: TelnyxWebhookInput): boolean {
   if (!input.publicKey) return true;
   if (!input.timestamp || !input.signature || !isFresh(input.timestamp, input.toleranceSeconds)) return false;
   try {

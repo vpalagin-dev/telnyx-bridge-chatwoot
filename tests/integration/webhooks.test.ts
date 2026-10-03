@@ -69,6 +69,27 @@ describe('webhook routes', () => {
     expect(chatwoot.messageCalls).toBe(1);
   });
 
+  it('accepts the base64 raw Ed25519 public key format used by Telnyx', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const store = new BridgeStore(':memory:');
+    const chatwoot = new FakeChatwoot();
+    const spki = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+    const rawPublicKey = spki.subarray(-32).toString('base64');
+    const app = buildApp({ config: config(rawPublicKey), store, chatwoot, telnyx: new FakeTelnyx() });
+    resources.push(app, store);
+    const body = fixture('../fixtures/telnyx/message-received.json');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = sign(null, Buffer.from(`${timestamp}|${body}`), privateKey).toString('base64');
+
+    const response = await app.inject({
+      method: 'POST', url: '/webhooks/telnyx', payload: body,
+      headers: { 'content-type': 'application/json', 'telnyx-timestamp': timestamp, 'telnyx-signature-ed25519': signature },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(chatwoot.messageCalls).toBe(1);
+  });
+
   it('rejects invalid Telnyx authentication before side effects', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
     const store = new BridgeStore(':memory:');

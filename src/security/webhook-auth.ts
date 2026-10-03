@@ -1,4 +1,19 @@
-import { createHmac, timingSafeEqual, verify } from 'node:crypto';
+import { createHmac, createPublicKey, timingSafeEqual, verify } from 'node:crypto';
+
+const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+
+function normalizeTelnyxPublicKey(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.includes('BEGIN PUBLIC KEY')) return trimmed;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) return trimmed;
+  const raw = Buffer.from(trimmed, 'base64');
+  if (raw.length !== 32) return trimmed;
+  return createPublicKey({
+    key: Buffer.concat([ed25519SpkiPrefix, raw]),
+    format: 'der',
+    type: 'spki',
+  });
+}
 
 function isFresh(timestamp: string, toleranceSeconds: number, now = Date.now()): boolean {
   const seconds = Number(timestamp);
@@ -18,7 +33,7 @@ export function verifyTelnyxWebhook(input: {
     return verify(
       null,
       Buffer.from(`${input.timestamp}|${input.rawBody}`),
-      input.publicKey,
+      normalizeTelnyxPublicKey(input.publicKey),
       Buffer.from(input.signature, 'base64'),
     );
   } catch {

@@ -24,4 +24,8 @@
 
 ## Commit
 
-Commit: `b383fb2` (`feat(queue): add redis dispatch with postgres recovery`).
+Implementation commit: `5fdabae` (`feat(queue): add redis dispatch with postgres recovery`).
+
+## Verification update
+
+- Report finalized after the implementation commit; the full-suite result above is from the fresh `npm test` run in this session.

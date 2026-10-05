@@ -1,4 +1,4 @@
-import type { BridgeStore } from '../db/store.js';
+import type { OperationalStore } from '../persistence/operational-store.js';
 
 export type AiReplyLimitConfig = {
   debounceMs: number;
@@ -18,7 +18,7 @@ export const DEFAULT_AI_REPLY_LIMITS: AiReplyLimitConfig = {
 
 export class AiReplyRateLimiter {
   constructor(
-    private readonly store: BridgeStore,
+    private readonly store: OperationalStore,
     private readonly config: AiReplyLimitConfig = DEFAULT_AI_REPLY_LIMITS,
   ) {}
 

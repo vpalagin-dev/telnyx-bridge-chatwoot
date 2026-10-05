@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ChatwootClient } from '../chatwoot/client.js';
-import type { BridgeStore } from '../db/store.js';
+import type { OperationalStore } from '../persistence/operational-store.js';
 import type { AiProcessResult } from '../ai/types.js';
 import { normalizePhone } from '../domain/phone.js';
 import { classifyConsentCommand } from '../domain/suppression.js';
@@ -21,7 +21,7 @@ const inboundEventSchema = z.object({
 });
 
 type Dependencies = {
-  store: BridgeStore;
+  store: OperationalStore;
   chatwoot: ChatwootClient;
   senderNumber: string;
   postInbound?: (input: { inboundIdentity: string; telnyxEventId: string; telnyxMessageId: string; conversationId: number; inboundMessageId: number; recipient: string; customerMessage: string }) => Promise<AiProcessResult>;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { BridgeStore } from '../db/store.js';
+import type { OperationalStore } from '../persistence/operational-store.js';
 import type { TelnyxClient } from '../telnyx/client.js';
 
 const outboundEventSchema = z.object({
@@ -15,7 +15,7 @@ const outboundEventSchema = z.object({
 }).passthrough();
 
 type Dependencies = {
-  store: BridgeStore;
+  store: OperationalStore;
   telnyx: TelnyxClient;
   accountId: number;
   inboxId: number;

@@ -1,5 +1,5 @@
 import type { BridgeConfig } from '../config/env.js';
-import type { BridgeStore } from '../db/store.js';
+import type { OperationalStore } from '../persistence/operational-store.js';
 import type { ChatwootAiHistoryWriter, OpenAiAdapter, AiTelnyxDispatcher, PostInboundAiInput, AiProcessResult } from './types.js';
 import { selectDefaultEvent, loadApprovedKnowledge } from './knowledge.js';
 import { validateAiDecision } from './response-validation.js';
@@ -15,7 +15,7 @@ export async function processAiPostInbound(
   input: PostInboundAiInput,
   d: {
     config: BridgeConfig;
-    store: BridgeStore;
+    store: OperationalStore;
     openai: OpenAiAdapter;
     history: ChatwootAiHistoryWriter;
     telnyx: AiTelnyxDispatcher;

@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from 'pg';
 import { BRIDGE_SCHEMA, POSTGRES_SCHEMA_SQL } from './schema.js';
 
 export type ReceiptStatus = 'pending' | 'processing' | 'completed' | 'retryable' | 'needs_review';
+export type ReceiptResultCode = 'processed' | 'retryable' | 'needs_review';
 
 export type Receipt = {
   receiptId: string;
@@ -17,12 +18,15 @@ export type Receipt = {
   lastError: string | null;
   receivedAt: Date;
   processedAt: Date | null;
+  resultCode: ReceiptResultCode | null;
 };
 
 export type OutboxJob = {
   jobId: string;
   receiptId: string;
   dispatchedAt: Date | null;
+  claimedBy: string | null;
+  claimedAt: Date | null;
   createdAt: Date;
 };
 
@@ -45,12 +49,15 @@ type ReceiptRow = {
   last_error: string | null;
   received_at: Date;
   processed_at: Date | null;
+  result_code: ReceiptResultCode | null;
 };
 
 type OutboxRow = {
   job_id: string;
   receipt_id: string;
   dispatched_at: Date | null;
+  claimed_by: string | null;
+  claimed_at: Date | null;
   created_at: Date;
 };
 
@@ -130,59 +137,91 @@ export class PostgresStore {
     });
   }
 
-  async completeReceipt(receiptId: string, _result?: unknown): Promise<void> {
-    await this.#pool.query(
+  async completeReceipt(
+    receiptId: string,
+    workerId: string,
+    resultCode: ReceiptResultCode = 'processed',
+  ): Promise<void> {
+    assertResultCode(resultCode);
+    const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_receipts
-       SET status = 'completed', processed_at = now(), locked_by = NULL,
-           locked_at = NULL, last_error = NULL
-       WHERE receipt_id = $1`,
-      [receiptId],
+       SET status = 'completed', processed_at = now(), result_code = $3,
+           locked_by = NULL, locked_at = NULL, last_error = NULL
+       WHERE receipt_id = $1 AND status = 'processing' AND locked_by = $2`,
+      [receiptId, workerId, resultCode],
     );
+    assertOwnedTransition(result.rowCount, receiptId, workerId);
   }
 
-  async retryReceipt(receiptId: string, error: Error | string, nextAttemptAt: Date): Promise<void> {
+  async retryReceipt(
+    receiptId: string,
+    workerId: string,
+    error: Error | string,
+    nextAttemptAt: Date,
+  ): Promise<void> {
     const message = error instanceof Error ? error.message : error;
-    await this.#pool.query(
+    const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_receipts
-       SET status = 'retryable', attempts = attempts + 1, next_attempt_at = $2,
+       SET status = 'retryable', attempts = attempts + 1, next_attempt_at = $3,
+           result_code = 'retryable', last_error = $4, locked_by = NULL, locked_at = NULL
+       WHERE receipt_id = $1 AND status = 'processing' AND locked_by = $2`,
+      [receiptId, workerId, nextAttemptAt, message],
+    );
+    assertOwnedTransition(result.rowCount, receiptId, workerId);
+  }
+
+  async markReviewRequired(receiptId: string, workerId: string, reason: string): Promise<void> {
+    const result = await this.#pool.query(
+      `UPDATE ${BRIDGE_SCHEMA}.webhook_receipts
+       SET status = 'needs_review', processed_at = now(), result_code = 'needs_review',
            last_error = $3, locked_by = NULL, locked_at = NULL
-       WHERE receipt_id = $1`,
-      [receiptId, nextAttemptAt, message],
+       WHERE receipt_id = $1 AND status = 'processing' AND locked_by = $2`,
+      [receiptId, workerId, reason],
     );
+    assertOwnedTransition(result.rowCount, receiptId, workerId);
   }
 
-  async markReviewRequired(receiptId: string, reason: string): Promise<void> {
-    await this.#pool.query(
-      `UPDATE ${BRIDGE_SCHEMA}.webhook_receipts
-       SET status = 'needs_review', processed_at = now(), last_error = $2,
-           locked_by = NULL, locked_at = NULL
-       WHERE receipt_id = $1`,
-      [receiptId, reason],
-    );
-  }
-
-  async claimOutboxBatch(limit: number): Promise<OutboxJob[]> {
+  async claimOutboxBatch(
+    limit: number,
+    dispatcherId: string,
+    leaseDurationMs = 30_000,
+  ): Promise<OutboxJob[]> {
+    const normalizedLimit = Math.max(0, Math.floor(limit));
+    if (normalizedLimit === 0) return [];
+    const leaseCutoff = new Date(Date.now() - Math.max(0, leaseDurationMs));
     return this.#transaction(async (client) => {
       const result = await client.query<OutboxRow>(
-        `SELECT job_id, receipt_id, dispatched_at, created_at
-         FROM ${BRIDGE_SCHEMA}.webhook_outbox
-         WHERE dispatched_at IS NULL
-         ORDER BY created_at, job_id
-         LIMIT $1
-         FOR UPDATE SKIP LOCKED`,
-        [Math.max(0, Math.floor(limit))],
+        `WITH candidates AS (
+           SELECT job_id
+           FROM ${BRIDGE_SCHEMA}.webhook_outbox
+           WHERE dispatched_at IS NULL
+             AND (claimed_at IS NULL OR claimed_at <= $2)
+           ORDER BY created_at, job_id
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE ${BRIDGE_SCHEMA}.webhook_outbox AS outbox
+         SET claimed_by = $3, claimed_at = now()
+         FROM candidates
+         WHERE outbox.job_id = candidates.job_id
+         RETURNING outbox.job_id, outbox.receipt_id, outbox.dispatched_at,
+                   outbox.claimed_by, outbox.claimed_at, outbox.created_at`,
+        [normalizedLimit, leaseCutoff, dispatcherId],
       );
       return result.rows.map(mapOutboxJob);
     });
   }
 
-  async markOutboxDispatched(jobId: string): Promise<void> {
-    await this.#pool.query(
+  async markOutboxDispatched(jobId: string, dispatcherId: string): Promise<void> {
+    const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_outbox
        SET dispatched_at = now()
-       WHERE job_id = $1`,
-      [jobId],
+       WHERE job_id = $1 AND dispatched_at IS NULL AND claimed_by = $2`,
+      [jobId, dispatcherId],
     );
+    if (result.rowCount !== 1) {
+      throw new Error(`Outbox job ${jobId} is not owned by dispatcher ${dispatcherId}`);
+    }
   }
 
   async #transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -215,6 +254,7 @@ function mapReceipt(row: ReceiptRow): Receipt {
     lastError: row.last_error,
     receivedAt: row.received_at,
     processedAt: row.processed_at,
+    resultCode: row.result_code,
   };
 }
 
@@ -223,6 +263,20 @@ function mapOutboxJob(row: OutboxRow): OutboxJob {
     jobId: row.job_id,
     receiptId: row.receipt_id,
     dispatchedAt: row.dispatched_at,
+    claimedBy: row.claimed_by,
+    claimedAt: row.claimed_at,
     createdAt: row.created_at,
   };
+}
+
+function assertResultCode(resultCode: string): asserts resultCode is ReceiptResultCode {
+  if (resultCode !== 'processed' && resultCode !== 'retryable' && resultCode !== 'needs_review') {
+    throw new Error(`Unsupported receipt result code: ${resultCode}`);
+  }
+}
+
+function assertOwnedTransition(rowCount: number | null, receiptId: string, workerId: string): void {
+  if (rowCount !== 1) {
+    throw new Error(`Receipt ${receiptId} is not owned by worker ${workerId}`);
+  }
 }

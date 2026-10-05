@@ -26,3 +26,19 @@
 ## Commit
 
 Implementation commit: `08880af` (`feat(storage): add durable postgres webhook receipts`).
+
+## Fix Round
+
+- Added `claimed_by` and `claimed_at` outbox lease fields with idempotent schema migrations. `claimOutboxBatch(limit, dispatcherId, leaseDurationMs)` atomically claims rows using `FOR UPDATE SKIP LOCKED`, excludes active leases, and permits expired-lease recovery.
+- `markOutboxDispatched(jobId, dispatcherId)` now requires current claim ownership and fails closed for stale or unknown dispatchers.
+- Updated receipt transition interfaces to require `workerId`; completion, retry, and review updates require `status = 'processing'` plus matching `locked_by`, preventing stale workers from changing terminal state.
+- Completion and transition outcomes persist only the allowlisted `result_code` values (`processed`, `retryable`, `needs_review`); raw result values are not accepted or stored.
+- Added integration coverage for concurrent outbox assignment, lease recovery, stale receipt workers, and stale dispatchers. Cleanup reclaims expired leases between disposable-database tests.
+- Removed literal EOF-style markers from the touched persistence/report artifacts.
+
+## Fix Round Verification
+
+- TDD RED: reviewer-expanded integration test/API expectations produced TypeScript signature and property failures before the store implementation was updated.
+- Targeted integration suite: `npm exec vitest -- run tests/integration/persistence/postgres-store.test.ts` — skipped without `TEST_DATABASE_URL`; no production or Railway credential fallback.
+- Typecheck: `npm exec -- tsc -p tsconfig.json --noEmit` — passed.
+- Full suite: `npm test` — 97 passed, 10 skipped; 19 test files passed and the PostgreSQL integration file skipped because `TEST_DATABASE_URL` was absent.

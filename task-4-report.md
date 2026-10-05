@@ -4,9 +4,10 @@
 
 - Added an optional `receiptAdapter.insertReceipt` dependency to `buildApp`.
 - In `postgres_redis` mode, the Telnyx route now:
+  - fails closed with HTTP 401 before parsing or persistence when `config.telnyx.publicKey` is missing;
   - authenticates the original raw request body before any persistence;
-  - parses and validates the existing Telnyx inbound JSON shape;
-  - inserts the provider event through the receipt adapter (which owns transactional receipt/outbox insertion and deduplication);
+  - validates only the generic durable-receipt envelope (`data.id`, non-empty `data.event_type`, and object `data.payload`), with optional provider metadata accepted without business constraints;
+  - inserts every authenticated generic event through the receipt adapter (which owns transactional receipt/outbox insertion and deduplication), including unsupported event types, MMS, and wrong-direction events;
   - returns HTTP 200 `{ accepted: true, receiptId }` for both first delivery and duplicate delivery;
   - does not invoke Chatwoot, OpenAI, or Telnyx inline.
 - `buildRuntime` creates and initializes `PostgresStore` only for `postgres_redis`, while retaining the existing SQLite/default synchronous path.
@@ -24,3 +25,4 @@
 - Worker execution and downstream processing of durable receipts are intentionally not implemented in Task 4.
 - PostgreSQL integration tests remain environment-gated and were skipped because no disposable `TEST_DATABASE_URL` was configured; no Railway credentials were used.
 - The receipt adapter is responsible for the transactional receipt plus outbox write; the app/runtime integration does not duplicate that storage logic.
+- **Explicit follow-up gap:** approved Task 2 schema currently stores raw webhook payloads as JSONB, and this repository has no payload-encryption key configuration or helper. Task 4 therefore does not claim payload encryption compliance; adding encrypted payload storage and key management requires a separate approved follow-up.

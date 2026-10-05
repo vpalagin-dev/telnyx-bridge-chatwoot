@@ -115,6 +115,63 @@ describe('webhook routes', () => {
     expect(telnyx.calls).toHaveLength(0);
   });
 
+  it('accepts and deduplicates signed generic Telnyx events without downstream calls', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const store = new BridgeStore(':memory:');
+    const chatwoot = new FakeChatwoot();
+    const telnyx = new FakeTelnyx();
+    const receipts = new FakeReceiptAdapter();
+    const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const cfg = { ...config(publicKeyPem), persistence: { ...config(publicKeyPem).persistence, mode: 'postgres_redis' as const } };
+    const app = buildApp({ config: cfg, store, chatwoot, telnyx, receiptAdapter: receipts });
+    resources.push(app, store);
+
+    const events = [
+      { id: 'evt-sent-1', event_type: 'message.sent', payload: { id: 'msg-sent-1', direction: 'outbound', type: 'SMS' } },
+      { id: 'evt-mms-1', event_type: 'message.received', payload: { id: 'msg-mms-1', direction: 'inbound', type: 'MMS', media: [{ url: 'https://example.test/image.jpg' }] } },
+      { id: 'evt-wrong-direction-1', event_type: 'message.received', payload: { id: 'msg-wrong-direction-1', direction: 'outbound', type: 'SMS' } },
+      { id: 'evt-unknown-1', event_type: 'delivery.received', payload: { id: 'delivery-unknown-1', status: 'delivered' } },
+    ];
+
+    for (const event of events) {
+      const body = JSON.stringify({ data: { ...event, occurred_at: '2026-01-01T00:00:00.000Z' } });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = sign(null, Buffer.from(`${timestamp}|${body}`), privateKey).toString('base64');
+      const request = () => app.inject({
+        method: 'POST', url: '/webhooks/telnyx', payload: body,
+        headers: { 'content-type': 'application/json', 'telnyx-timestamp': timestamp, 'telnyx-signature-ed25519': signature },
+      });
+
+      const first = await request();
+      const second = await request();
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({ accepted: true, receiptId: `receipt-${events.indexOf(event) + 1}` });
+      expect(second.statusCode).toBe(200);
+      expect(second.json()).toEqual({ accepted: true, receiptId: `receipt-${events.indexOf(event) + 1}` });
+    }
+
+    expect(receipts.insertCalls).toBe(events.length);
+    expect(chatwoot.messageCalls).toBe(0);
+    expect(telnyx.calls).toHaveLength(0);
+  });
+
+  it('fails closed before parsing or persistence when postgres_redis lacks a Telnyx public key', async () => {
+    const store = new BridgeStore(':memory:');
+    const receipts = new FakeReceiptAdapter();
+    const base = config('');
+    const cfg = { ...base, telnyx: { apiKey: base.telnyx.apiKey, senderNumber: base.telnyx.senderNumber }, persistence: { ...base.persistence, mode: 'postgres_redis' as const } };
+    const app = buildApp({ config: cfg, store, chatwoot: new FakeChatwoot(), telnyx: new FakeTelnyx(), receiptAdapter: receipts });
+    resources.push(app, store);
+
+    const response = await app.inject({
+      method: 'POST', url: '/webhooks/telnyx', payload: '{not-json',
+      headers: { 'content-type': 'application/json' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(receipts.insertCalls).toBe(0);
+  });
+
   it('rejects an invalid postgres_redis Telnyx signature without persistence', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
     const store = new BridgeStore(':memory:');

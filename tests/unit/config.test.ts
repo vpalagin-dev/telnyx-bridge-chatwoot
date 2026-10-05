@@ -24,6 +24,7 @@ describe('loadConfig', () => {
     expect(config.server.port).toBe(3000);
     expect(config.databasePath).toBe(':memory:');
     expect(config.outbound).toEqual({ mode: 'fake' });
+    expect(config.ai).toMatchObject({ debounceMs: 15000, replyLimit: 10, replyLimitWindowMs: 86400000 });
   });
 
   it('requires an allowlisted test recipient before live outbound can start', () => {

@@ -5,7 +5,7 @@
 - [x] Explicit event selection and repository-confined approved demo knowledge.
 - [x] Response validation, escalation categories, GSM-7 single-segment validation.
 - [x] Separate Chatwoot AI history writer with bridge-owned marker.
-- [x] SQLite AI decision/state tables, unique inbound identity, side-effect IDs, sticky human state, restart persistence.
+- [x] SQLite AI decision state tables, unique inbound identity, side-effect IDs, debounce/quota state, restart persistence.
 - [x] Post-inbound callback after successful inbound creation; callback failure isolated from inbound acknowledgement.
 - [x] Human webhook marker filtering and direct AI Telnyx fan-out separation.
 - [x] Fake smoke and marker contract tests pass with no provider calls.

@@ -41,7 +41,7 @@ Feature 002's interim implementation targets this current repository baseline on
 
 ### 1.0.1 Formal cross-feature exception
 
-Feature 002 is a separately scoped and versioned exception to Feature 001's AI/automation outbound prohibition. The exception permits only one AI response synchronously triggered by one eligible inbound Telnyx SMS, using the Feature 002 direct AI dispatcher and every gate defined by this specification. It does not weaken Feature 001 human outbound authorization, suppression, authoritative recipient binding, deduplication, or restrictions against campaigns, scheduling, proactive sends, broadcasts, or arbitrary recipients. The exception does not authorize AI sends through `processChatwootOutbound`. AI MUST run only after successful eligible inbound processing. Duplicate, ignored, failed, or suppressed inbound events MUST NOT invoke AI. No public AI send endpoint, arbitrary recipient input, model-selected recipient, campaign, scheduler, broadcast, or proactive send is permitted. `waiting_for_human` and `human_active` suppress AI, and Chatwoot assignment/status cannot reactivate it.
+Feature 002 is a separately scoped and versioned exception to Feature 001's AI/automation outbound prohibition. The exception permits one AI response for each genuinely new eligible inbound Telnyx SMS, using the Feature 002 direct AI dispatcher and every gate defined by this specification. It does not weaken Feature 001 human outbound authorization, suppression, same-contact recipient binding, deduplication, or restrictions against campaigns, scheduling, proactive sends, broadcasts, or arbitrary recipients. The exception does not authorize AI sends through `processChatwootOutbound`. AI MUST run only after successful eligible inbound processing. Duplicate, ignored, failed, or suppressed inbound events MUST NOT invoke AI. No public AI send endpoint, arbitrary recipient input, model-selected recipient, campaign, scheduler, broadcast, or proactive send is permitted. Debounce and rolling quota may delay or block a reply, while a human reply does not permanently disable later AI evaluation.
 
 ### 1.1 Explicit distinction between message types
 
@@ -62,10 +62,21 @@ The following decisions are binding for the initial smoke scope and supersede an
 1. **Feature-owned durable SQLite state and deduplication.** Feature 002 owns durable SQLite records for the bridge-authoritative conversation states `ai_active`, `waiting_for_human`, and `human_active`, and for one AI decision keyed by the stable triggering inbound Chatwoot message/event identity. The decision persists inbound message identity, conversation ID, event ID, AI decision ID, Chatwoot history message ID, Telnyx action ID, outcome/status, and state transition, but never raw prompts, responses, or message bodies. A duplicate identity must reuse the recorded decision/outcome and must not create another AI decision, history record, or Telnyx submission.
 2. **Synchronous post-inbound operation.** The AI step runs synchronously only after Feature 001 has successfully created and correlated the inbound Chatwoot message. It uses a bounded `OPENAI_TIMEOUT_MS`. It cannot replace, delay before, or roll back the existing inbound creation. A durable asynchronous AI worker, queue, retry dispatcher, and background recovery are explicitly deferred from this smoke scope.
 3. **Single configuration event source.** The sole initial-smoke event-selection source is `AI_DEFAULT_EVENT_ID`. It is required for an enabled AI smoke path and must resolve to exactly one current approved knowledge document. Conversation metadata event selection is a future extension and is not implemented, read, or accepted as a fallback in this smoke.
-4. **Sticky human control.** `human_active` remains sticky. The initial smoke defines no return-to-AI operator action, endpoint, Chatwoot assignment/status interpretation, or automatic transition from `human_active` to `ai_active`.
+4. **Continuous conversational control.** A human Chatwoot reply does not automatically enter or preserve a state that suppresses future AI replies. The initial implementation has no explicit pause/resume control; each genuinely new inbound message is evaluated under suppression, debounce, and quota rules.
 5. **Independent live-provider gate.** `AI_LIVE_OPENAI_ENABLED=false` is the default. `AI_ENABLED` authorizes only the Feature 002 decision flow; by itself it must select a fake OpenAI adapter and make zero real OpenAI network requests. A real OpenAI adapter may be selected only when both `AI_ENABLED=true` and `AI_LIVE_OPENAI_ENABLED=true`, with an externally supplied `OPENAI_API_KEY`; tests must always inject a fake OpenAI adapter.
 6. **Knowledge fixture contract.** Knowledge is repository-owned Markdown only under `specs/002-jama-ai-assistant-smoke/knowledge/`. Every event file must have YAML frontmatter containing exactly one stable `event_id`, a `status`, `effective_from`, and `review_by`. Initial fixture content must visibly state that it is demo/test data and not real JAMA facts.
-7. **Separate AI outbound safety boundary.** `OUTBOUND_MODE=fake` is the default and is mandatory for fake smoke and local live-AI mode. After OpenAI validation, the Node.js bridge may submit the same AI response directly through the Telnyx adapter, but only after suppression, authoritative recipient resolution, sticky-state checks, durable deduplication, and the applicable live-approval/allowlist checks. OpenAI failure or invalid output never calls Telnyx.
+7. **Separate AI outbound safety boundary.** `OUTBOUND_MODE=fake` is the default and is mandatory for fake smoke and local live-AI mode. After OpenAI validation, the Node.js bridge may submit the same AI response directly through the Telnyx adapter, but only after suppression, same-contact recipient resolution, debounce/quota checks, durable deduplication, and the applicable live-approval/allowlist checks. OpenAI failure or invalid output never calls Telnyx.
+
+### 1.3 Conversational auto-reply amendment
+
+This amendment is authoritative for the intended conversational behavior:
+
+1. Every genuinely new eligible inbound customer SMS may trigger one AI reply when AI is enabled, suppression is clear, and the per-phone quota permits it. A duplicate delivery of the same provider message must not trigger another AI request, history record, or Telnyx submission. Two distinct customer SMS messages with identical text are still two separate inbound messages and may receive two replies.
+2. `human_active` is not entered automatically when an operator sends a human reply. A human Chatwoot reply is an outbound operator action only; the next new inbound customer SMS may invoke AI again. Any future explicit AI pause control is out of scope for this amendment.
+3. `waiting_for_human` is not a permanent silence state for subsequent ordinary customer questions. Escalation/fallback outcomes may be recorded, but a later genuinely new inbound message may be evaluated by AI again, subject to suppression and quota.
+4. A short configurable debounce window acts as a per-phone dispatch cooldown in the synchronous interim baseline. It prevents immediate repeated AI/Telnyx dispatches while inbound messages remain in Chatwoot; it is not a long conversation block or a replacement for a future durable worker queue.
+5. A durable rolling per-phone AI reply quota limits cost and spam. The initial defaults are `AI_DEBOUNCE_MS=15000`, `AI_REPLY_LIMIT=10`, and `AI_REPLY_LIMIT_WINDOW_MS=86400000`. When the quota is exhausted, inbound messages remain receivable and durable, but no further automatic AI Telnyx reply is submitted until the rolling window permits it.
+6. AI campaigns, broadcasts, audience selection, and proactive messages remain prohibited. Human-created Chatwoot campaigns are separate from this conversational reply path.
 
 ## 2. Relationship to Feature 001
 
@@ -91,7 +102,7 @@ The Node.js bridge owns the post-inbound AI fan-out. The sequence is:
 
 1. Customer inbound SMS is processed by the existing Feature 001 inbound path.
 2. Feature 001 creates and correlates the inbound message in Chatwoot.
-3. Feature 002 checks the sticky conversation state, selects only the explicit `AI_DEFAULT_EVENT_ID`, and loads only approved repository-owned knowledge.
+3. Feature 002 checks suppression, debounce, rolling quota, and conversation eligibility, then selects only the explicit `AI_DEFAULT_EVENT_ID` and loads only approved repository-owned knowledge.
 4. Feature 002 calls OpenAI through the selected adapter.
 5. After a valid AI response, the bridge creates one AI response record in the same Chatwoot conversation for operator history. Immediately before that create, the bridge adds the explicit metadata marker `ai_generated: true`. If Chatwoot cannot preserve it, the only accepted equivalent is the durable Chatwoot history-message-ID lookup defined in CHW-002-01.
 6. The bridge sends the same validated AI response through the direct Telnyx adapter path, never by waiting for or re-entering the human Chatwoot outbound webhook path.
@@ -103,7 +114,7 @@ Direct AI Telnyx dispatch must pass all of these safeguards before submission:
 - **Suppression:** evaluate the Feature 001 suppression projection under the shared per-phone lock; any blocked, unknown, stale, or race-affected state prevents submission.
 - **Recipient:** resolve the recipient from the authoritative inbound identity/conversation binding, never from model output, free-form webhook data, or an arbitrary request; the recipient must be allowlisted for any live-SMS run.
 - **Deduplication:** atomically claim at most one AI decision, one Chatwoot AI history record, and one Telnyx submission for each inbound message identity. Ambiguous or already-submitted state never blind-retries.
-- **State:** require an eligible `ai_active` conversation and preserve sticky `waiting_for_human`/`human_active` suppression. OpenAI failure, invalid output, Chatwoot-history uncertainty, or a safety check failure produces no Telnyx call.
+- **State:** require an eligible inbound conversation and preserve explicit suppression/quota decisions. OpenAI failure, invalid output, Chatwoot-history uncertainty, or a safety check failure produces no Telnyx call; an earlier human reply does not suppress a later new inbound message.
 - **Mode and approval:** fake smoke uses fake providers; local live-AI uses `OUTBOUND_MODE=fake`; end-to-end live mode requires real OpenAI, the client Chatwoot deployment, live Telnyx, a separate explicit live-SMS approval, and a recipient allowlist. No configuration flag alone is sufficient to authorize live SMS.
 
 ### 2.2 Smoke modes
@@ -160,16 +171,16 @@ As a customer, I want the assistant to answer common event questions from approv
 
 As a JAMA operator, I want sensitive or unsupported conversations to reach a human and remain under human control after takeover.
 
-**Independent test**: Exercise escalation categories and state transitions using fake Chatwoot and AI adapters. Verify that escalation is represented in the conversation and that human takeover prevents future automatic AI replies.
+**Independent test**: Exercise escalation categories and later inbound messages using fake Chatwoot and AI adapters. Verify that escalation is represented safely and that a later genuinely new inbound message may be evaluated again, subject to suppression, debounce, and quota.
 
 #### Acceptance scenarios
 
 1. **Given** the customer asks about refunds or payments, makes a complaint, reports a safety issue, identifies as VIP, asks about partnership/sponsorship/press, or makes an unsupported request, **when** the inbound message is processed, **then** the assistant uses the safe fallback and marks the conversation `waiting_for_human`.
-2. **Given** a conversation is `waiting_for_human`, **when** another inbound message arrives before a human takeover, **then** the assistant does not silently answer as if the issue were resolved; it follows the configured escalation policy and does not generate an unsupported answer.
-3. **Given** an operator takes over, **when** the bridge records the takeover, **then** the authoritative conversation AI state becomes `human_active`.
-4. **Given** a conversation is `human_active`, **when** any inbound message arrives, **then** no AI reply is generated.
-5. **Given** Chatwoot assignment/status changes without an explicit bridge state transition, **when** a later inbound message arrives, **then** those changes MUST NOT silently re-enable AI.
-6. **Given** an operator explicitly returns a conversation to AI handling through a future approved control, **when** the bridge records that control, **then** the state may transition to `ai_active`; this control is not an arbitrary public endpoint and is not required for the initial smoke implementation unless separately approved.
+2. **Given** a conversation is `waiting_for_human`, **when** another genuinely new inbound message arrives, **then** the assistant evaluates that message again using the same approved-knowledge, suppression, and quota rules; a previous escalation does not permanently disable conversational replies.
+3. **Given** an operator sends a human reply, **when** the bridge records that outbound action, **then** the human message is not sent through the AI trigger path and does not permanently disable AI.
+4. **Given** a later genuinely new inbound message arrives, **when** AI is enabled and the suppression/quota checks pass, **then** an AI reply may be generated regardless of earlier human replies or escalation outcomes.
+5. **Given** Chatwoot assignment/status changes without an explicit future pause control, **when** a later inbound message arrives, **then** those changes do not themselves enable or disable AI.
+6. **Given** a future explicit AI pause/resume control is introduced, **when** the bridge records that control, **then** it may alter eligibility; that control is out of scope for this implementation.
 
 ### User Story 5 — Cost-safe local smoke operation (Priority: P1)
 
@@ -186,23 +197,23 @@ As a developer, I want the smoke path to be safe to run locally without live pro
 
 ## 4. Conversation AI state
 
-The bridge owns the authoritative AI handling state for each eligible Chatwoot conversation. The minimum state machine is:
+The bridge owns durable AI decision deduplication and cost-control state for each eligible Chatwoot conversation. The conversational policy is:
 
 ```text
-ai_active ── human takeover ──> human_active
-ai_active ── escalation/unknown ──> waiting_for_human
-waiting_for_human ── explicit human takeover ──> human_active
+new inbound SMS ──> evaluate AI ──> one reply or safe no-send outcome
+human reply ──────> human outbound only; does not disable future AI inbound replies
+quota/debounce ───> delay, coalesce, or block automatic reply without deleting inbound history
 ```
 
 Rules:
 
-- Feature 002 persists the authoritative state and AI-decision deduplication in its durable SQLite records; Chatwoot state is only an optional presentation/projection.
-- New eligible smoke conversations may start in `ai_active` only when `AI_ENABLED=true` and `AI_DEFAULT_EVENT_ID` resolves to one current approved knowledge document.
-- `waiting_for_human` means the latest AI decision requires human attention; it is not permission to continue autonomous answering.
-- `human_active` is sticky for the initial smoke. No return-to-AI control is implemented or required.
-- Chatwoot assignment, status, labels, metadata, or inbox presentation may expose the state to operators but MUST NOT be treated as a state transition or an implicit return-to-AI signal.
+- Feature 002 persists AI-decision deduplication, debounce state, and rolling per-phone quota in durable SQLite records; Chatwoot state is only an optional presentation/projection.
+- Every genuinely new eligible inbound message may start an AI decision when `AI_ENABLED=true` and `AI_DEFAULT_EVENT_ID` resolves to one current approved knowledge document.
+- A duplicate provider delivery reuses the prior decision; two distinct inbound messages with identical text remain distinct and may each receive a reply.
+- A previous fallback, escalation, or human reply does not permanently disable later AI evaluation. Any explicit pause/resume control is out of scope.
+- Chatwoot assignment, status, labels, metadata, or inbox presentation do not themselves enable or disable AI.
 - One inbound Chatwoot message/event identity may have at most one durable AI decision, one AI-created Chatwoot history message, and one AI Telnyx submission.
-- State transitions and AI reply deduplication must survive process restart.
+- Deduplication, debounce and quota state must survive process restart.
 
 ## 5. Deterministic event selection
 
@@ -413,7 +424,7 @@ Configuration validation must fail closed for an enabled AI path with invalid to
 
 Feature 002 claims MUST be atomic within the current SQLite `BridgeStore` before any AI side effect. One stable inbound identity has at most one AI decision. The claim, unique inbound identity, unique history message ID, unique AI action ID, state transition, and unknown/review status MUST survive SQLite restart. Unknown or ambiguous states MUST never be automatically re-claimed.
 
-The AI callback runs only after Feature 001 has successfully created and correlated the inbound Chatwoot message. A successful Feature 001 inbound MUST NOT become HTTP `503` because the AI callback fails, times out, or records a reviewable outcome. AI outcome/failure is stored separately from the completed inbound event. Duplicate, ignored, failed, or suppressed inbound events MUST NOT invoke AI; `waiting_for_human` and sticky `human_active` MUST suppress AI; Chatwoot assignment/status changes MUST NOT reactivate AI.
+The AI callback runs only after Feature 001 has successfully created and correlated the inbound Chatwoot message. A successful Feature 001 inbound MUST NOT become HTTP `503` because the AI callback fails, times out, or records a reviewable outcome. AI outcome/failure is stored separately from the completed inbound event. Duplicate, ignored, failed, or suppressed inbound events MUST NOT invoke AI; a genuinely new inbound event may invoke AI again after earlier fallback, escalation, or human replies, subject to suppression, debounce, and rolling quota. Chatwoot assignment/status changes MUST NOT themselves enable or disable AI.
 
 The implementation uses a separate `ChatwootAiHistoryWriter` interface for AI history creation. The existing `ChatwootClient` inbound interface and its current fakes are not required to implement AI methods. All existing `BridgeConfig` fixtures must be updated when AI configuration is added, without changing Feature 001 outbound defaults.
 
@@ -473,8 +484,8 @@ Tests are mandatory before implementation is considered complete. All provider i
 3. **Escalation**
    - refunds/payments, complaints, safety, VIP, partnership, press, and unsupported requests transition to `waiting_for_human`;
    - escalation does not invoke Telnyx;
-   - human takeover transitions to `human_active`;
-   - `human_active` suppresses future AI replies;
+   - human replies remain human outbound actions and do not automatically suppress future AI evaluation;
+   - human Chatwoot replies do not suppress future AI replies for new inbound messages;
    - Chatwoot assignment/status alone cannot re-enable AI.
 
 4. **Disabled AI**
@@ -548,7 +559,7 @@ Fake smoke mode and local live-AI mode must never send a real SMS. End-to-end li
 - **FR-014**: Unknown or unsupported questions MUST produce a safe fallback and human-escalation outcome.
 - **FR-015**: Refund/payment, complaint, safety, VIP, partnership, press, and unsupported requests MUST escalate to a human.
 - **FR-016**: Feature 002 SQLite records MUST own the authoritative `ai_active`, `waiting_for_human`, and `human_active` state.
-- **FR-017**: Human takeover MUST transition the authoritative state to sticky `human_active`, suppress subsequent automatic AI replies, and have no return-to-AI action in this smoke.
+- **FR-017**: A human Chatwoot reply MUST remain a human outbound action and MUST NOT automatically suppress subsequent AI replies to genuinely new inbound customer messages. Any explicit AI pause/resume action is out of scope for this implementation.
 - **FR-018**: Chatwoot assignment/status changes MUST NOT silently re-enable AI.
 - **FR-019**: OpenAI provider failure MUST fail safely without fabricated content or Telnyx side effects.
 - **FR-020**: `OUTBOUND_MODE=fake` MUST be the default and MUST be mandatory for fake smoke and local live-AI mode; end-to-end live mode requires separate explicit live-SMS approval and a recipient allowlist.
@@ -580,7 +591,7 @@ Fake smoke mode and local live-AI mode must never send a real SMS. End-to-end li
 - **SC-004**: Two distinct event IDs receive only their own event-specific knowledge; cross-event answers are prevented by deterministic context selection.
 - **SC-005**: Missing/unknown/ambiguous event context produces no OpenAI call or an explicitly safe escalation path, never a guessed event answer.
 - **SC-006**: Unknown, sensitive, and unsupported requests produce safe fallback/escalation outcomes without unsupported factual claims.
-- **SC-007**: Human takeover prevents automatic AI replies for all later inbound messages; `human_active` remains sticky because no return-to-AI transition exists in the initial smoke.
+- **SC-007**: A human Chatwoot reply does not prevent automatic AI replies for later genuinely new inbound messages; debounce and rolling quota remain the applicable cost controls.
 - **SC-008**: OpenAI timeout/provider failure/invalid response produces no unsafe history record and zero Telnyx submissions.
 - **SC-009**: Fake smoke uses fake OpenAI, fake Chatwoot, and fake Telnyx; local live-AI uses real OpenAI with local Chatwoot and `OUTBOUND_MODE=fake`; no unapproved mode sends live SMS.
 - **SC-010**: Privacy tests find no API keys, full phone numbers, SMS bodies, raw prompts/context, or raw OpenAI responses in logs or durable AI metadata.
@@ -596,7 +607,7 @@ Fake smoke mode and local live-AI mode must never send a real SMS. End-to-end li
 2. The bounded synchronous provider call adds latency after the inbound Chatwoot message is safely created. The initial smoke accepts this bounded local risk; a durable asynchronous worker is explicitly deferred rather than implied as a fallback.
 3. Approved Markdown can become stale or contradictory; the required `effective_from`/`review_by` metadata and explicit ownership are required.
 4. OpenAI responses can contain unsupported claims even with strict instructions; bridge-side validation and safe fallback are mandatory.
-5. Human takeover semantics may not map cleanly to Chatwoot assignment/status; bridge-owned state remains authoritative and sticky.
+5. Human Chatwoot replies are not AI state transitions; any future explicit pause/resume control would require a separate approved contract.
 
 ### CHW-002-01 — mandatory Chatwoot safety gate
 
@@ -611,7 +622,7 @@ Before enabling AI history creation or direct AI live dispatch, perform a short 
 
 If the marker is not preserved, the only accepted fallback is to store the Chatwoot history message ID in the durable AI decision record and make the human path consult that mapping before eligibility. Unknown or unavailable lookup fails closed/review. AI history creation and direct AI live dispatch remain disabled until either the marker contract or this fallback is implemented and tested.
 
-All other clarification decisions are resolved for planning: current Fastify/SQLite/synchronous ownership, atomic SQLite deduplication, callback isolation, `AI_DEFAULT_EVENT_ID`-only selection, sticky `human_active`, the canonical live-OpenAI predicate, feature-owned YAML knowledge fixtures, tri-state marker filtering, zero-send fallback/escalation, and the three explicit provider/scope tracks.
+All other clarification decisions are resolved for planning: current Fastify/SQLite/synchronous ownership, atomic SQLite deduplication, callback isolation, `AI_DEFAULT_EVENT_ID`-only selection, continuous conversational replies with debounce and rolling quota, the canonical live-OpenAI predicate, feature-owned YAML knowledge fixtures, tri-state marker filtering, zero-send fallback/escalation, and the three explicit provider/scope tracks.
 
 ## 18. Assumptions and dependencies
 

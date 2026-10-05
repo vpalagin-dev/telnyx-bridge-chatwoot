@@ -16,8 +16,9 @@
 - `AI_ENABLED=true` alone must select fake/no-network OpenAI behavior; a real OpenAI adapter requires `AI_PROVIDER_MODE=live`, `AI_LIVE_OPENAI_ENABLED=true`, and an externally supplied `OPENAI_API_KEY`.
 - `OUTBOUND_MODE=fake` is the default and is mandatory for fake smoke and local live-AI tests; these modes must make zero Telnyx network calls.
 - `OUTBOUND_MODE=live` without explicit `AI_LIVE_SMS_APPROVED=true` fails closed. Live dispatch also requires an exact authoritative-recipient match in `AI_LIVE_RECIPIENT_ALLOWLIST`.
-- OpenAI failure, invalid output, missing/ambiguous knowledge, Chatwoot history failure/ambiguity, suppression, `waiting_for_human`, `human_active`, or any failed safety gate makes zero Telnyx submissions.
+- OpenAI failure, invalid output, missing/ambiguous knowledge, Chatwoot history failure/ambiguity, suppression, exhausted AI quota, or any failed safety gate makes zero Telnyx submissions. A human operator reply does not automatically suppress AI for later new inbound messages.
 - One stable inbound identity may create at most one AI decision, one AI Chatwoot history record, and one Telnyx submission. Ambiguous side effects become `unknown_needs_review`; they are never blind-retried.
+- A short configurable debounce acts as a per-phone dispatch cooldown in the synchronous interim baseline; inbound messages remain in Chatwoot and are not silently deleted. A durable rolling per-phone quota limits AI replies; initial defaults are `AI_DEBOUNCE_MS=15000`, `AI_REPLY_LIMIT=10`, and `AI_REPLY_LIMIT_WINDOW_MS=86400000`. Quota exhaustion preserves inbound receipt but blocks further automatic AI sends until the window permits.
 - `AI_DEFAULT_EVENT_ID` is the only initial event selector. Do not infer event identity from SMS text, conversation metadata, fuzzy matching, embeddings, or model output.
 - Durable AI records and logs must not contain API keys, full phone numbers, SMS bodies, raw prompts/context, raw OpenAI responses, or provider authorization headers.
 - Do not modify `C:\work\germes`, create another Chatwoot deployment, add secrets, add a public arbitrary-recipient endpoint, or add campaigns/scheduling/proactive AI.
@@ -132,7 +133,7 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 - Modify: `src/db/store.ts`
 - Create: `tests/integration/ai/sqlite-concurrency.test.ts`
 
-- [ ] **Step 1 — RED:** Test atomic concurrent claims, one inbound identity, one history ID, one AI action ID, restart durability, sticky states, and no reclaim of unknown/ambiguous decisions.
+- [ ] **Step 1 — RED:** Test atomic concurrent claims, one inbound identity, one history ID, one AI action ID, restart durability, later inbound after human reply, debounce/quota state, and no reclaim of unknown/ambiguous decisions.
 - [ ] **Step 2 — RED command:** `npx vitest run tests/integration/ai/sqlite-concurrency.test.ts`; expected failure because AI tables/methods are absent.
 - [ ] **Step 3 — Implement:** Use SQLite transactions/conditional uniqueness within `DatabaseSync`; do not claim PostgreSQL or cross-store lock guarantees.
 - [ ] **Step 4 — GREEN command:** Reopen a file-backed SQLite database and rerun the concurrency assertions.
@@ -183,6 +184,33 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 - [ ] **Step 2 — RED command:** `npx vitest run tests/contract/feature-002-zero-network.test.ts tests/integration/ai/fake-provider-isolation.test.ts`; expected failure until composition/fakes exist.
 - [ ] **Step 3 — Implement:** Inject fake providers and make live clients unreachable from fake smoke.
 - [ ] **Step 4 — GREEN command:** Run with network-capable clients composed but no network invocation.
+
+### T000K Add conversational debounce and rolling quota contracts
+
+**Files:**
+- Modify: `src/config/env.ts`
+- Modify: `src/db/store.ts`
+- Create: `src/ai/rate-limit.ts`
+- Create: `tests/unit/ai/rate-limit.test.ts`
+- Create: `tests/integration/ai/conversation-policy.test.ts`
+
+- [ ] **Step 1 — RED:** Test that every distinct inbound message can trigger an AI decision, duplicate provider delivery creates no second decision, human outbound does not permanently disable later AI inbound, debounce blocks an immediate repeated dispatch while preserving the inbound in Chatwoot, one phone cannot exceed the rolling AI reply quota, quota survives SQLite restart, and a different phone has an independent quota.
+- [ ] **Step 2 — RED command:** `npx vitest run tests/unit/ai/rate-limit.test.ts tests/integration/ai/conversation-policy.test.ts`; expected failure until the policy and durable counters exist.
+- [ ] **Step 3 — Reconcile:** Treat provider event/message IDs as transport deduplication metadata only; identical text in two distinct inbound messages remains eligible twice. Keep campaigns and broadcast outside this path.
+- [ ] **Step 4 — GREEN:** Implement the minimal configurable debounce/quota policy and run the targeted tests plus existing AI/inbound/outbound regression tests.
+
+### T000L Remove automatic sticky human suppression
+
+**Files:**
+- Modify: `src/ai/process-ai.ts`
+- Modify: `src/db/store.ts`
+- Modify: `tests/integration/ai/process-ai.test.ts`
+- Modify: `tests/integration/ai/store.test.ts`
+
+- [ ] **Step 1 — RED:** Add a failing test proving that a human Chatwoot outbound message does not itself disable AI for a later new inbound message. Preserve explicit suppression and duplicate guards.
+- [ ] **Step 2 — RED command:** `npx vitest run tests/integration/ai/process-ai.test.ts tests/integration/ai/store.test.ts`; expected failure while human replies still disable later AI evaluation.
+- [ ] **Step 3 — Implement:** Remove automatic human-takeover suppression from the normal conversational path. Keep any future explicit pause control out of scope and keep human Chatwoot messages out of the AI trigger path.
+- [ ] **Step 4 — GREEN:** Run targeted AI tests, existing human outbound tests, and typecheck.
 
 ---
 
@@ -274,10 +302,10 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 
 **Interfaces produced:** `validateAiDecision(decision, policy): ValidatedAiDecision`; `classifyEscalation(customerMessage): EscalationCategory | null`; `transitionForOutcome(outcome): { state, outcome }`.
 
-- [ ] **Step 1 — Write failing tests first:** Cover supported answer, empty/malformed/over-limit output, unsupported claims, prompt injection, fallback, refunds/payments, complaints, safety/emergency/harassment/threats, VIP/artist access, partnership/sponsorship, press/media, unsupported/account-specific requests, provider error, and sticky `human_active` behavior.
+- [ ] **Step 1 — Write failing tests first:** Cover supported answer, empty/malformed/over-limit output, unsupported claims, prompt injection, fallback, refunds/payments, complaints, safety/emergency/harassment/threats, VIP/artist access, partnership/sponsorship, press/media, unsupported/account-specific requests, provider error, and later inbound after a human reply.
 - [ ] **Step 2 — RED command:** `npx vitest run tests/unit/ai/response-validation.test.ts tests/unit/ai/escalation.test.ts`
   - Expected result: FAIL because policy modules are absent.
-- [ ] **Step 3 — Minimal implementation:** Enforce trimmed bounded SMS-safe output, reject model-controlled routing/event fields, normalize safe fallback/error outcomes, classify mandatory escalation categories deterministically, transition escalation/fallback to `waiting_for_human`, keep accepted supported answers in `ai_active`, and make `human_active` sticky.
+- [ ] **Step 3 — Minimal implementation:** Enforce trimmed bounded SMS-safe output, reject model-controlled routing/event fields, normalize safe fallback/error outcomes, classify mandatory escalation categories deterministically, record escalation/fallback outcomes without permanently disabling later new inbound evaluation, and keep accepted supported answers eligible for the conversational path.
 - [ ] **Step 4 — GREEN command:** `npx vitest run tests/unit/ai/response-validation.test.ts tests/unit/ai/escalation.test.ts && npm run typecheck`
 - [ ] **Step 5 — Verification checkpoint:** Assert returned errors/log metadata contain categories and IDs only, never model text; run `npm test`.
 
@@ -333,10 +361,10 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 
 **Interfaces produced:** `claimAiDecision`, `getAiDecision`, `setAiDecisionOutcome`, `recordAiHistoryMessage`, `recordAiTelnyxSubmission`, `markAiDecisionUnknown`, `getConversationAiState`, `ensureAiActive`, `transitionToWaitingForHuman`, and `transitionToHumanActive` with the exact signatures in `plan.md`.
 
-- [ ] **Step 1 — Write failing tests first:** Test schema creation/reopen, one atomic decision claim, duplicate reuse, deterministic first decision ID, one history ID, one Telnyx action/message ID, `ai_active -> waiting_for_human -> human_active`, illegal return from `human_active`, restart durability, absence of raw-content columns, unique side-effect IDs, and ambiguous status refusing re-claim.
+- [ ] **Step 1 — Write failing tests first:** Test schema creation/reopen, one atomic decision claim, duplicate reuse, deterministic first decision ID, one history ID, one Telnyx action/message ID, later inbound after a human reply, restart durability, absence of raw-content columns, unique side-effect IDs, debounce, rolling quota, and ambiguous status refusing re-claim.
 - [ ] **Step 2 — RED command:** `npx vitest run tests/integration/ai/store.test.ts tests/integration/store.test.ts`
   - Expected result: FAIL because Feature 002 tables and methods are absent.
-- [ ] **Step 3 — Minimal implementation:** Add idempotent `ai_conversation_state` and `ai_decisions` tables, use SQLite transactions/conditional inserts for atomic claims, preserve all Feature 001 tables/semantics, store only IDs/outcome/status/state/model/timestamps, and make `human_active` sticky.
+- [ ] **Step 3 — Minimal implementation:** Add idempotent `ai_conversation_state` and `ai_decisions` tables, use SQLite transactions/conditional inserts for atomic claims, preserve all Feature 001 tables/semantics, store only IDs/outcome/status/state/model/timestamps plus durable debounce/quota metadata, without automatically disabling later AI replies after human outbound.
 - [ ] **Step 4 — GREEN command:** `npx vitest run tests/integration/ai/store.test.ts tests/integration/store.test.ts && npm run typecheck`
 - [ ] **Step 5 — Verification checkpoint:** Reopen a file-backed database and prove state and dedupe survive restart; inspect schema for absence of message bodies/prompts/responses/phone/API-key columns; run `npm test`.
 
@@ -350,7 +378,7 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 
 **Interfaces produced:** `FakeAiTelnyxDispatcher.submit(input)` returns deterministic fake action data and records calls; `LiveAiTelnyxDispatcher.submit(input)` delegates once to `TelnyxClient.sendSms`; `createAiTelnyxDispatcher(config, telnyx, store)` selects the safe mode.
 
-- [ ] **Step 1 — Write failing tests first:** Test fake mode zero network calls even when an HTTP Telnyx client exists, same validated text, fixed sender, authoritative recipient only, live approval false, missing/incorrect allowlist, `OUTBOUND_MODE=live` without explicit approval, suppressed recipient, `waiting_for_human`, `human_active`, duplicate/ambiguous decisions, and exactly one live submission when every gate passes.
+- [ ] **Step 1 — Write failing tests first:** Test fake mode zero network calls even when an HTTP Telnyx client exists, same validated text, fixed sender, authoritative recipient only, live approval false, missing/incorrect allowlist, `OUTBOUND_MODE=live` without explicit approval, suppressed recipient, duplicate/ambiguous decisions, debounce, rolling quota, and exactly one live submission when every gate passes.
 - [ ] **Step 2 — RED command:** `npx vitest run tests/unit/ai/telnyx-dispatch.test.ts tests/unit/runtime.test.ts`
   - Expected result: FAIL because the AI dispatchers and composition are absent.
 - [ ] **Step 3 — Minimal implementation:** Add fake and live dispatchers, reuse only `TelnyxClient.sendSms({ from, to, text })`, derive recipient from the authoritative conversation binding, enforce suppression/state/dedupe/encoding/approval/allowlist/mode gates, use deterministic `ai-${aiDecisionId}` action IDs, and never accept sender/recipient from model output or arbitrary HTTP input. Keep end-to-end live SMS blocked until the durable AI-specific guard, sender/profile/readiness relationship, crash/restart/ambiguity handling, and aggregate live-send budget relationship are implemented. Leave the human Telnyx client behavior unchanged.
@@ -371,7 +399,7 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 
 **Interfaces produced:** `processAiPostInbound(input, dependencies): Promise<AiProcessResult>` and `buildPostInboundAiHook(dependencies)`.
 
-- [ ] **Step 1 — Write failing tests first:** Test disabled AI, missing/invalid event, suppressed recipient, `waiting_for_human`, `human_active`, fake supported-answer fan-out order, escalation/fallback with zero Telnyx, provider/validation failures with zero history/Telnyx, same conversation and marker, exact same validated text to history/direct Telnyx, duplicate inbound identity, Chatwoot failure before Telnyx, ambiguous Chatwoot result, Telnyx failure/ambiguity, and restart reuse.
+- [ ] **Step 1 — Write failing tests first:** Test disabled AI, missing/invalid event, suppressed recipient, later inbound after human reply, fake supported-answer fan-out order, debounce and rolling quota, escalation/fallback with zero Telnyx, provider/validation failures with zero history/Telnyx, same conversation and marker, exact same validated text to history/direct Telnyx, duplicate inbound identity, Chatwoot failure before Telnyx, ambiguous Chatwoot result, Telnyx failure/ambiguity, and restart reuse.
 - [ ] **Step 2 — RED command:** `npx vitest run tests/integration/ai/process-ai.test.ts`
   - Expected result: FAIL because orchestration is absent.
 - [ ] **Step 3 — Minimal implementation:** Follow this order: check AI/suppression/state; select `AI_DEFAULT_EVENT_ID`; load approved context; call OpenAI; validate SMS encoding; atomically claim one decision; pass the marker hard gate; create marked Chatwoot history; durably record history ID; only then submit direct AI Telnyx for a supported validated answer when every gate permits; record final status. Fallback, escalation, provider failure, validation failure, missing knowledge, suppression, human state, blocked approval, encoding failure, and ambiguous history outcomes create zero Telnyx submissions. On history/Telnyx ambiguity, record `unknown_needs_review` and never retry blindly. Do not store the transient customer message or response, and do not convert a completed inbound into HTTP 503 if this callback fails.
@@ -478,7 +506,7 @@ Tasks within a group marked `[P]` may be worked in parallel only when their list
 7. **Live SMS gate:** `OUTBOUND_MODE=live` without explicit `AI_LIVE_SMS_APPROVED=true` fails closed. Even with approval, the authoritative inbound recipient must exactly match `AI_LIVE_RECIPIENT_ALLOWLIST`, a durable AI-specific live guard must be available, sender/profile and Feature 001 readiness relationship must match, crash/restart/ambiguity handling must be proven, GSM-7/UCS-2 single-segment validation must pass, and aggregate live-send budget rules must be satisfied; no model or request may choose a recipient.
 8. **Fan-out ordering gate:** OpenAI validation and SMS encoding validation precede Chatwoot history; durable history success plus the marker hard gate precede direct AI Telnyx dispatch. The AI record never enters the human Chatwoot outbound path.
 9. **Failure/ambiguity gate:** OpenAI failure, invalid output, missing knowledge, fallback/escalation, suppression, human state, blocked approval, or encoding failure means zero Telnyx submissions and no raw/fabricated output. Chatwoot/Telnyx ambiguous outcomes become `unknown_needs_review` and cannot blind-retry.
-10. **State gate:** `human_active` is sticky; `waiting_for_human` does not silently resume AI; Chatwoot assignment/status cannot re-enable AI. State survives SQLite restart.
+10. **Conversation policy gate:** human Chatwoot replies do not automatically disable AI for later new inbound messages; explicit pause/resume is out of scope; debounce and rolling quota state survive SQLite restart.
 11. **Exactly-once upper-bound gate:** For each inbound identity, there is at most one AI decision, history record, and Telnyx submission. Escalation/provider/validation failures intentionally produce zero Telnyx submissions.
 12. **Privacy/scope gate:** No secrets, raw customer content, raw prompts/context, raw responses, full numbers, `C:\work\germes` changes, second Chatwoot deployment, or new public send surface.
 13. **Live operational gate:** Any separately approved local Chatwoot validation or local live-AI test must be explicitly authorized, redacted, bounded, and absent from the default fake smoke path. This task decomposition itself performs no provider calls.
@@ -510,7 +538,7 @@ T008 ─────────────────────> T010
 
 1. **Formal exception:** Feature 002 is a separately scoped/versioned exception to Feature 001's AI/automation outbound prohibition. It permits only one inbound-triggered AI response through a separate dispatcher and does not weaken any human-path safety control.
 2. **Current implementation boundary:** The interim implementation is Fastify + synchronous SQLite `BridgeStore`; it introduces no PostgreSQL, worker, queue, lease, readiness, or migration behavior and does not claim Feature 001's future architecture.
-3. **Inbound-only trigger:** AI runs only after successful eligible inbound processing. Duplicate, ignored, failed, or suppressed inbound events do not invoke AI. No public AI send endpoint, arbitrary recipient input, model-selected recipient, campaign, scheduler, broadcast, or proactive send exists. `waiting_for_human` and sticky `human_active` suppress AI, and Chatwoot assignment/status cannot reactivate it.
+3. **Inbound-only trigger:** AI runs only after successful eligible inbound processing. Duplicate, ignored, failed, or suppressed inbound events do not invoke AI. No public AI send endpoint, arbitrary recipient input, model-selected recipient, campaign, scheduler, broadcast, or proactive send exists. Later genuinely new inbound messages may invoke AI after human replies or earlier escalation, subject to suppression, debounce, and rolling quota.
 4. **History safety:** T000B makes marker validation a hard gate. T000C uses tri-state behavior: absent marker preserves human eligibility; valid `ai_generated=true` is ignored with zero Telnyx; malformed/present-but-invalid marker fails closed/review with zero Telnyx. If metadata is lost, the durable history-message-ID lookup fallback is authoritative and unknown/unavailable lookup fails closed.
 5. **Outcome upper bound:** One inbound identity has at most one AI decision, one history record, and one Telnyx submission. Only a supported validated answer can submit. Fallback/escalation, OpenAI/provider/validation failure, missing knowledge, suppression, human state, blocked approval, encoding failure, and ambiguous history produce zero Telnyx submissions. Ambiguity never blind-retries.
 6. **Callback isolation:** The AI callback occurs after inbound creation/correlation; callback failure is stored separately and cannot turn the completed inbound into HTTP 503 or roll it back.

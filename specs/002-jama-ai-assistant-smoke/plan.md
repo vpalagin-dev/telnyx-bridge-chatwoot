@@ -17,11 +17,12 @@
 - `AI_DEFAULT_EVENT_ID` is the only initial-smoke event selector. Do not read conversation metadata or infer an event from SMS text, fuzzy matching, embeddings, or model output.
 - Knowledge is repository-owned Markdown under `specs/002-jama-ai-assistant-smoke/knowledge/`; event frontmatter has exactly `event_id`, `status`, `effective_from`, and `review_by`, and fixtures visibly say `demo/test data — not real JAMA facts`.
 - The post-inbound AI operation is synchronous and runs only after Feature 001 successfully creates and correlates the inbound Chatwoot message. It must not replace, delay before, or roll back the inbound operation.
-- Feature 002 SQLite state is authoritative for `ai_active`, `waiting_for_human`, and sticky `human_active`, plus one AI decision per stable inbound identity.
+- Feature 002 SQLite state is authoritative for AI decision deduplication and cost controls. An operator human reply does not automatically suppress future AI replies; any explicit pause control is out of scope. One AI decision remains tied to each stable inbound identity.
 - A stable inbound identity has at most one AI decision, one Chatwoot AI history record, and one Telnyx submission. Ambiguous side effects are `unknown_needs_review`/reviewable and are never blind-retried.
 - The AI Chatwoot history record is marked with bridge-owned `ai_generated=true` only after response validation and the CHW-002-01 hard gate. If metadata is not preserved, the durable Chatwoot history-message-ID lookup fallback is required. It is not the transport trigger.
 - The human path remains `Chatwoot human outgoing webhook -> processChatwootOutbound -> TelnyxClient`; AI output MUST NOT enter that path.
-- Feature 002 is a separately scoped and versioned exception to Feature 001's AI/automation outbound prohibition. It permits only one AI response synchronously triggered by one eligible inbound Telnyx SMS through the Feature 002 direct dispatcher. It does not weaken human authorization, suppression, binding, deduplication, or restrictions against campaigns, scheduling, proactive sends, broadcasts, or arbitrary recipients.
+- Feature 002 is a separately scoped and versioned exception to Feature 001's AI/automation outbound prohibition. It permits one AI response per genuinely new eligible inbound Telnyx SMS through the Feature 002 direct dispatcher, while duplicate provider delivery is deduplicated. It does not weaken human authorization, suppression, binding, deduplication, or restrictions against campaigns, scheduling, proactive sends, broadcasts, or arbitrary recipients.
+- Conversational cost controls are part of this feature: a short configurable debounce window and a durable rolling per-phone AI reply quota. Initial defaults are `AI_DEBOUNCE_MS=15000`, `AI_REPLY_LIMIT=10`, and `AI_REPLY_LIMIT_WINDOW_MS=86400000`. Human replies do not automatically pause AI; campaigns remain human-controlled and separate.
 - `OUTBOUND_MODE=fake` remains the default and is mandatory for fake smoke and local live-AI mode. The canonical live OpenAI predicate is `AI_ENABLED=true AND AI_PROVIDER_MODE=live AND AI_LIVE_OPENAI_ENABLED=true AND OPENAI_API_KEY is present`; otherwise use fake/no-network behavior or fail closed.
 - The canonical live AI SMS predicate is `OUTBOUND_MODE=live AND AI_LIVE_SMS_APPROVED=true AND authoritative conversation-bound recipient is in AI_LIVE_RECIPIENT_ALLOWLIST AND durable AI live guard is available AND suppression/state/encoding/readiness/deduplication checks pass`.
 - Fake-only interim smoke is implementable after documentation reconciliation. Local live-AI is real OpenAI + local Chatwoot + fake Telnyx. End-to-end live AI SMS remains blocked until all live gates pass.
@@ -181,7 +182,7 @@ The exact `AiDecisionRecord` columns are: `inbound_identity`, `conversation_id`,
 
 `processTelnyxInbound` remains the owner of the existing inbound side effect. After it returns `outcome: 'created'`, the narrow callback invokes:
 
-1. `processAiPostInbound` checks `AI_ENABLED`, existing Feature 001 suppression, authoritative conversation binding, and Feature 002 sticky state.
+1. `processAiPostInbound` checks `AI_ENABLED`, existing Feature 001 suppression, same-contact conversation binding, debounce/quota eligibility, and the current inbound identity.
 2. `selectDefaultEvent(config.ai.defaultEventId, knowledgeRepository)` resolves exactly one current approved document. Missing/unknown/disabled/expired/ambiguous event fails closed without calling OpenAI.
 3. `loadApprovedKnowledge` returns only the selected event document plus approved shared support text; it rejects unsafe root escape, invalid frontmatter, draft status, future `effective_from`, and expired `review_by`.
 4. `OpenAiAdapter.generate` receives bounded limits, a fixed system instruction, selected event ID/context, the current customer message, and fallback policy. It never receives another event or general retrieval result.
@@ -280,7 +281,7 @@ These gates are documentation and test-planning prerequisites. They must be comp
 - Modify: `src/db/store.ts`
 - Create: `tests/integration/ai/sqlite-concurrency.test.ts`
 
-- [ ] **Step 1 — RED:** Test concurrent claims, unique inbound identity, one history ID, one AI action ID, restart durability, sticky states, and non-reclaim of unknown/ambiguous decisions.
+- [ ] **Step 1 — RED:** Test concurrent claims, unique inbound identity, one history ID, one AI action ID, restart durability, debounce/quota state, later inbound after human reply, and non-reclaim of unknown/ambiguous decisions.
 - [ ] **Step 2 — Run RED:** `npx vitest run tests/integration/ai/sqlite-concurrency.test.ts`; expected failure because AI tables/methods do not exist.
 - [ ] **Step 3 — Implement:** Use SQLite transactions/conditional uniqueness within `DatabaseSync`; do not claim PostgreSQL or cross-store locking.
 - [ ] **Step 4 — GREEN:** Run the concurrency test against a file-backed SQLite database and reopen it.
@@ -426,11 +427,11 @@ These gates are documentation and test-planning prerequisites. They must be comp
 - Modify: `tests/integration/store.test.ts`
 
 **Interfaces:**
-- Add `ai_conversation_state` keyed by `conversation_id`, with state, transition ID, timestamps, and sticky human takeover semantics.
+- Add durable AI decision, debounce, and rolling per-phone quota state keyed by inbound identity/phone; human replies do not automatically pause future AI replies.
 - Add `ai_decisions` keyed by `inbound_identity`, with the exact columns listed above and unique nullable-side-effect IDs.
 - Implement the `BridgeStore` methods in the Interfaces section; all claims must be atomic under SQLite transactions.
 
-- [ ] **Step 1 — RED:** Test schema creation/reopen, one decision claim, duplicate reuse, one history ID, one Telnyx action ID, state transitions `ai_active -> waiting_for_human -> human_active`, illegal `human_active -> ai_active`, restart durability, no raw content columns, and ambiguous status refusing re-claim.
+- [ ] **Step 1 — RED:** Test schema creation/reopen, one decision claim, duplicate reuse, one history ID, one Telnyx action ID, durable AI decision state, later inbound after human reply, restart durability, debounce and rolling quota, no raw content columns, and ambiguous status refusing re-claim.
 - [ ] **Step 2 — Run RED:** `npx vitest run tests/integration/ai/store.test.ts tests/integration/store.test.ts`; expected missing table/method failures.
 - [ ] **Step 3 — Implement:** Extend `BridgeStore` initialization with idempotent Feature 002 tables and transactional `INSERT OR IGNORE`/conditional updates. Preserve existing Feature 001 APIs and rows. Use a generated deterministic `aiDecisionId` only for the first claim; duplicate calls return the stored ID/status. Store model/outcome/state metadata only.
 - [ ] **Step 4 — GREEN:** `npx vitest run tests/integration/ai/store.test.ts tests/integration/store.test.ts && npm run typecheck`.
@@ -449,7 +450,7 @@ These gates are documentation and test-planning prerequisites. They must be comp
 - `classifyEscalation(customerMessage: string): EscalationCategory | null`.
 - `transitionForOutcome(outcome: ValidatedAiDecision): { state: AiConversationState; outcome: AiOutcome }`.
 
-- [ ] **Step 1 — RED:** Cover known answer, empty/over-limit/malformed output, unsupported claims, prompt injection, fallback, refunds/payments, complaints, safety/emergency/harassment/threats, VIP/artist access, partnership/sponsorship, press/media, unsupported/account-specific questions, disabled escalation test-only behavior, and sticky human state.
+- [ ] **Step 1 — RED:** Cover known answer, empty/over-limit/malformed output, unsupported claims, prompt injection, fallback, refunds/payments, complaints, safety/emergency/harassment/threats, VIP/artist access, partnership/sponsorship, press/media, unsupported/account-specific questions, disabled escalation test-only behavior, and durable conversational cost-control state.
 - [ ] **Step 2 — Run RED:** `npx vitest run tests/unit/ai/response-validation.test.ts tests/unit/ai/escalation.test.ts`; expected missing functions.
 - [ ] **Step 3 — Implement:** Enforce trimmed non-empty SMS-safe text, configured output bounds, no model-controlled event/routing fields, explicit answer/fallback/error kinds, deterministic escalation categories, configured fallback text, and state transitions. Escalation/fallback becomes `waiting_for_human`; accepted supported answer remains `ai_active`; provider/validation failure creates no sendable answer.
 - [ ] **Step 4 — GREEN:** `npx vitest run tests/unit/ai/response-validation.test.ts tests/unit/ai/escalation.test.ts && npm run typecheck`.

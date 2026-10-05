@@ -31,3 +31,12 @@ Review-fix commit: `30d653f` (`fix(queue): address task 3 review findings`).
 ## Verification update
 
 - Report finalized after the review-fix commit; the full-suite result above is from the fresh `npm test` run in this session.
+
+## Fix round 2
+
+- `startOutboxRecoveryLoop` now awaits `Promise.resolve(options.onError?.(error))` inside the catch so asynchronous error-handler rejection is contained.
+- `RedisDispatch.close()` attempts unsubscribe, subscriber quit, and publisher quit independently, while always resetting consumption flags and the seen-job set.
+- Added regression coverage for async recovery-handler rejection and unsubscribe-failure cleanup/reuse.
+- Typecheck: `npm run typecheck` — passed.
+- Full `npm test`: passed — 21 test files passed, 1 skipped; 107 tests passed and 19 skipped.
+- Commit: `fee7491` (`fix(queue): contain redis cleanup and recovery errors`).

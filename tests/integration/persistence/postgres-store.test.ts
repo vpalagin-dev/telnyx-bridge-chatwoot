@@ -86,6 +86,24 @@ suite('PostgresStore (disposable TEST_DATABASE_URL only)', () => {
     });
   });
 
+  it.each(['retryable', 'needs_review'] as const)('rejects contradictory completion result code %s', async (resultCode) => {
+    const inserted = await store.insertReceipt({
+      provider: 'telnyx',
+      providerEventId: `complete-contradictory-${resultCode}-${randomUUID()}`,
+      rawPayload: { complete: true },
+    });
+    await store.claimReceipt(inserted.receiptId, 'worker');
+
+    await expect(store.completeReceipt(inserted.receiptId, 'worker', resultCode)).rejects.toThrow(
+      /completion result code must be processed/i,
+    );
+    const row = await pool.query<{ status: string; result_code: string | null }>(
+      'SELECT status, result_code FROM telnyx_bridge.webhook_receipts WHERE receipt_id = $1',
+      [inserted.receiptId],
+    );
+    expect(row.rows[0]).toEqual({ status: 'processing', result_code: null });
+  });
+
   it('records completion and review-required outcomes', async () => {
     const completed = await store.insertReceipt({
       provider: 'telnyx',

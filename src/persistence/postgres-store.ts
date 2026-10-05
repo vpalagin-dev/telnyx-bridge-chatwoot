@@ -142,7 +142,7 @@ export class PostgresStore {
     workerId: string,
     resultCode: ReceiptResultCode = 'processed',
   ): Promise<void> {
-    assertResultCode(resultCode);
+    assertCompletionResultCode(resultCode);
     const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_receipts
        SET status = 'completed', processed_at = now(), result_code = $3,
@@ -269,9 +269,9 @@ function mapOutboxJob(row: OutboxRow): OutboxJob {
   };
 }
 
-function assertResultCode(resultCode: string): asserts resultCode is ReceiptResultCode {
-  if (resultCode !== 'processed' && resultCode !== 'retryable' && resultCode !== 'needs_review') {
-    throw new Error(`Unsupported receipt result code: ${resultCode}`);
+function assertCompletionResultCode(resultCode: ReceiptResultCode): void {
+  if (resultCode !== 'processed') {
+    throw new Error(`Completion result code must be processed, received ${resultCode}`);
   }
 }
 

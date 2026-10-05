@@ -42,3 +42,15 @@ Implementation commit: `08880af` (`feat(storage): add durable postgres webhook r
 - Targeted integration suite: `npm exec vitest -- run tests/integration/persistence/postgres-store.test.ts` — skipped without `TEST_DATABASE_URL`; no production or Railway credential fallback.
 - Typecheck: `npm exec -- tsc -p tsconfig.json --noEmit` — passed.
 - Full suite: `npm test` — 97 passed, 10 skipped; 19 test files passed and the PostgreSQL integration file skipped because `TEST_DATABASE_URL` was absent.
+
+## Fix Round 2: Completion Result Invariant
+
+- Restricted `completeReceipt` to the `processed` result code; `retryable` and `needs_review` now fail before issuing any database update, so a completed status cannot carry a contradictory outcome.
+- Added an integration regression covering both contradictory codes and asserting the receipt remains `processing` with no result code after rejection.
+- Preserved the accepted at-least-once outbox lease design; no outbox behavior was changed.
+
+## Fix Round 2 Verification
+
+- TDD regression test was added before the production change. The targeted PostgreSQL suite could not execute against a database because `TEST_DATABASE_URL` was absent; it collected 11 tests and skipped all 11 without falling back to production or Railway credentials.
+- Typecheck: `npm exec -- tsc -p tsconfig.json --noEmit` — passed.
+- Full suite: `npm test` — 97 passed, 12 skipped; 19 test files passed and the PostgreSQL integration file skipped because `TEST_DATABASE_URL` was absent.

@@ -71,7 +71,7 @@ The following decisions are binding for the initial smoke scope and supersede an
 
 This amendment is authoritative for the intended conversational behavior:
 
-1. Every genuinely new eligible inbound customer SMS may trigger one AI reply when AI is enabled, suppression is clear, and the per-phone quota permits it. A duplicate delivery of the same provider message must not trigger another AI request, history record, or Telnyx submission. Two distinct customer SMS messages with identical text are still two separate inbound messages and may receive two replies.
+1. Every genuinely new eligible inbound customer SMS may trigger one AI reply when AI is enabled, suppression is clear, and the per-phone quota permits it. A duplicate delivery of the same provider message must not trigger another AI request, history record, or Telnyx submission. Two distinct customer SMS messages with identical text are still two separate inbound messages and may receive two replies. For live smoke testing, AI may answer without a configured Knowledge Base event; when a Knowledge Base event is configured, it remains the approved source for event-specific answers.
 2. `human_active` is not entered automatically when an operator sends a human reply. A human Chatwoot reply is an outbound operator action only; the next new inbound customer SMS may invoke AI again. Any future explicit AI pause control is out of scope for this amendment.
 3. `waiting_for_human` is not a permanent silence state for subsequent ordinary customer questions. Escalation/fallback outcomes may be recorded, but a later genuinely new inbound message may be evaluated by AI again, subject to suppression and quota.
 4. A short configurable debounce window acts as a per-phone dispatch cooldown in the synchronous interim baseline. It prevents immediate repeated AI/Telnyx dispatches while inbound messages remain in Chatwoot; it is not a long conversation block or a replacement for a future durable worker queue.
@@ -102,7 +102,7 @@ The Node.js bridge owns the post-inbound AI fan-out. The sequence is:
 
 1. Customer inbound SMS is processed by the existing Feature 001 inbound path.
 2. Feature 001 creates and correlates the inbound message in Chatwoot.
-3. Feature 002 checks suppression, debounce, rolling quota, and conversation eligibility, then selects only the explicit `AI_DEFAULT_EVENT_ID` and loads only approved repository-owned knowledge.
+3. Feature 002 checks suppression, debounce, rolling quota, and conversation eligibility. If `AI_DEFAULT_EVENT_ID` is configured, it selects only that event and loads only approved repository-owned knowledge; otherwise it runs in general live-smoke mode without event-specific claims.
 4. Feature 002 calls OpenAI through the selected adapter.
 5. After a valid AI response, the bridge creates one AI response record in the same Chatwoot conversation for operator history. Immediately before that create, the bridge adds the explicit metadata marker `ai_generated: true`. If Chatwoot cannot preserve it, the only accepted equivalent is the durable Chatwoot history-message-ID lookup defined in CHW-002-01.
 6. The bridge sends the same validated AI response through the direct Telnyx adapter path, never by waiting for or re-entering the human Chatwoot outbound webhook path.
@@ -418,7 +418,7 @@ The following environment variables are required or planned for this feature. Se
 - `CHATWOOT_URL` — local smoke target remains `http://localhost:3001`; end-to-end live mode uses the separately approved client Chatwoot deployment.
 - Existing Chatwoot, Telnyx, webhook, and database variables remain governed by Feature 001. No secret values are added to source control.
 
-Configuration validation must fail closed for an enabled AI path with invalid token limits, invalid or unbounded timeout, missing feature-owned knowledge root, or an unavailable/ambiguous `AI_DEFAULT_EVENT_ID`. It must require `OPENAI_API_KEY` only when the canonical live OpenAI predicate is true. AI-disabled startup, and any non-canonical live combination, must not make a real provider request and must preserve the existing non-AI runtime or use only the injected fake adapter.
+Configuration validation must fail closed for an enabled AI path with invalid token limits, invalid or unbounded timeout, or a missing feature-owned knowledge root when `AI_DEFAULT_EVENT_ID` is configured. It must require `OPENAI_API_KEY` only when the canonical live OpenAI predicate is true. AI-disabled startup, and any non-canonical live combination, must not make a real provider request and must preserve the existing non-AI runtime or use only the injected fake adapter.
 
 ## 10.1 AI state and post-inbound isolation
 

@@ -27,6 +27,19 @@ describe('loadConfig', () => {
     expect(config.ai).toMatchObject({ debounceMs: 15000, replyLimit: 10, replyLimitWindowMs: 86400000 });
   });
 
+  it('allows AI live smoke mode without a configured knowledge-base event', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      AI_ENABLED: 'true',
+      AI_PROVIDER_MODE: 'live',
+      AI_LIVE_OPENAI_ENABLED: 'true',
+      OPENAI_API_KEY: 'openai-test-key',
+    });
+
+    expect(config.ai?.defaultEventId).toBeUndefined();
+    expect(config.ai?.enabled).toBe(true);
+  });
+
   it('requires an allowlisted test recipient before live outbound can start', () => {
     expect(() => loadConfig({ ...validEnvironment, OUTBOUND_MODE: 'live' })).toThrowError(
       /TEST_RECIPIENT_NUMBER/,

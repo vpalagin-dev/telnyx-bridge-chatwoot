@@ -77,6 +77,28 @@ describe('conversational AI policy', () => {
     expect(telnyx.calls).toHaveLength(1);
   });
 
+  it('answers a live smoke message when no knowledge-base event is configured', async () => {
+    const store = new BridgeStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const { defaultEventId: _ignoredEventId, ...aiWithoutKnowledgeEvent } = config.ai!;
+    const noKnowledgeConfig: BridgeConfig = { ...config, ai: aiWithoutKnowledgeEvent };
+    const deps = {
+      config: noKnowledgeConfig,
+      store,
+      openai: new FakeOpenAiAdapter({ kind: 'answer', text: 'I can help with that.' }),
+      history,
+      telnyx,
+    };
+
+    const result = await processAiPostInbound(input('inbound-without-knowledge', 33), deps);
+
+    expect(result.outcome).toBe('answered');
+    expect(history.calls).toHaveLength(1);
+    expect(telnyx.calls).toHaveLength(1);
+  });
+
   it('treats two distinct inbound messages with identical text as separate replies', async () => {
     const store = new BridgeStore(':memory:');
     stores.push(store);

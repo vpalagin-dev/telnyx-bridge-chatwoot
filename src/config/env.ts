@@ -11,6 +11,11 @@ const environmentSchema = z
     HOST: z.string().min(1).default('127.0.0.1'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
     DATABASE_PATH: z.string().min(1).default('./data/bridge.sqlite'),
+    PERSISTENCE_MODE: z.enum(['sqlite', 'postgres_redis']).default('sqlite'),
+    DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
+    REDIS_URL: z.preprocess(blank, z.string().url().optional()),
+    BRIDGE_REDIS_PREFIX: z.string().min(1).default('telnyx-bridge:'),
+    RUNTIME_ROLE: z.enum(['web', 'worker']).default('web'),
     CHATWOOT_URL: z.string().url(),
     CHATWOOT_ACCOUNT_ID: z.coerce.number().int().positive(),
     CHATWOOT_INBOX_ID: z.coerce.number().int().positive(),
@@ -56,12 +61,23 @@ const environmentSchema = z
     if ((env.NODE_ENV === 'production' || !loopbackHosts.has(env.HOST)) && !env.TELNYX_PUBLIC_KEY) {
       context.addIssue({ code: 'custom', path: ['TELNYX_PUBLIC_KEY'], message: 'required outside loopback development' });
     }
+    if (env.PERSISTENCE_MODE === 'postgres_redis') {
+      if (!env.DATABASE_URL) context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'required for postgres_redis persistence' });
+      if (!env.REDIS_URL) context.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required for postgres_redis persistence' });
+    }
   });
 
 export type BridgeConfig = {
   environment: 'development' | 'test' | 'production';
   server: { host: string; port: number };
   databasePath: string;
+  persistence: {
+    mode: 'sqlite' | 'postgres_redis';
+    databaseUrl?: string | undefined;
+    redisUrl?: string | undefined;
+    redisPrefix: string;
+  };
+  runtimeRole: 'web' | 'worker';
   chatwoot: { url: string; accountId: number; inboxId: number; apiToken: string; webhookSecret?: string };
   telnyx: { apiKey: string; publicKey?: string; senderNumber: string };
   outbound: { mode: 'fake'; testRecipientNumber?: string } | { mode: 'live'; testRecipientNumber: string };
@@ -105,6 +121,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     environment: env.NODE_ENV,
     server: { host: env.HOST, port: env.PORT },
     databasePath: env.DATABASE_PATH,
+    persistence: {
+      mode: env.PERSISTENCE_MODE,
+      databaseUrl: env.DATABASE_URL,
+      redisUrl: env.REDIS_URL,
+      redisPrefix: env.BRIDGE_REDIS_PREFIX,
+    },
+    runtimeRole: env.RUNTIME_ROLE,
     chatwoot: {
       url: env.CHATWOOT_URL.replace(/\/$/, ''),
       accountId: env.CHATWOOT_ACCOUNT_ID,

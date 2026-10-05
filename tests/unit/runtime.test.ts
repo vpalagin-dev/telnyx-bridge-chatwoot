@@ -7,6 +7,8 @@ const config: BridgeConfig = {
   environment: 'test',
   server: { host: '127.0.0.1', port: 3000 },
   databasePath: ':memory:',
+  persistence: { mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
+  runtimeRole: 'web',
   chatwoot: { url: 'http://localhost:3001', accountId: 1, inboxId: 2, apiToken: 'test-token' },
   telnyx: { apiKey: 'test-key', senderNumber: '+15551234567' },
   outbound: { mode: 'fake' },

@@ -37,6 +37,8 @@ function config(publicKey: string): BridgeConfig {
     environment: 'test',
     server: { host: '127.0.0.1', port: 3000 },
     databasePath: ':memory:',
+    persistence: { mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
+    runtimeRole: 'web',
     chatwoot: {
       url: 'http://localhost:3001', accountId: 1, inboxId: 2,
       apiToken: 'chatwoot-token-for-test', webhookSecret: 'chatwoot-secret-for-test',

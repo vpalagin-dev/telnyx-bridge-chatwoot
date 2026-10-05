@@ -23,8 +23,58 @@ describe('loadConfig', () => {
     expect(config.chatwoot.url).toBe('http://localhost:3001');
     expect(config.server.port).toBe(3000);
     expect(config.databasePath).toBe(':memory:');
+    expect(config.persistence).toEqual({ mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' });
+    expect(config.runtimeRole).toBe('web');
     expect(config.outbound).toEqual({ mode: 'fake' });
     expect(config.ai).toMatchObject({ debounceMs: 15000, replyLimit: 10, replyLimitWindowMs: 86400000 });
+  });
+
+  it('loads postgres and redis runtime settings for production', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      HOST: '0.0.0.0',
+      PERSISTENCE_MODE: 'postgres_redis',
+      DATABASE_URL: 'postgresql://test-only',
+      REDIS_URL: 'redis://test-only',
+      BRIDGE_REDIS_PREFIX: 'custom-bridge:',
+      RUNTIME_ROLE: 'worker',
+    });
+
+    expect(config.persistence).toEqual({
+      mode: 'postgres_redis',
+      databaseUrl: 'postgresql://test-only',
+      redisUrl: 'redis://test-only',
+      redisPrefix: 'custom-bridge:',
+    });
+    expect(config.runtimeRole).toBe('worker');
+  });
+
+  it.each(['DATABASE_URL', 'REDIS_URL'])('rejects production postgres_redis mode without %s', (missingField) => {
+    const environment = {
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      HOST: '0.0.0.0',
+      PERSISTENCE_MODE: 'postgres_redis',
+      DATABASE_URL: 'postgresql://test-only',
+      REDIS_URL: 'redis://test-only',
+    };
+    delete environment[missingField as keyof typeof environment];
+
+    expect(() => loadConfig(environment)).toThrowError(new RegExp(missingField));
+  });
+
+  it('preserves sqlite configuration without postgres or redis URLs', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      PERSISTENCE_MODE: 'sqlite',
+      DATABASE_URL: '',
+      REDIS_URL: '',
+      RUNTIME_ROLE: 'web',
+    });
+
+    expect(config.persistence).toEqual({ mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' });
+    expect(config.databasePath).toBe(':memory:');
   });
 
   it('allows AI live smoke mode without a configured knowledge-base event', () => {

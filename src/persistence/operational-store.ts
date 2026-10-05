@@ -9,7 +9,7 @@ export type Awaitable<T> = T | Promise<T>;
 export type OperationalEventProvider = 'telnyx' | 'chatwoot';
 export type OperationalEventStatus = 'processing' | 'completed' | 'unknown_needs_review';
 export type OutboundActionStatus = 'submitting' | 'sent' | 'unknown_needs_review';
-export type AiDecisionUnknownReason = 'chatwoot_history' | 'telnyx_submission';
+export type AiDecisionUnknownReason = 'chatwoot_history' | 'telnyx_submission' | 'rate_limit' | 'store';
 
 export type OutboundActionRecord = {
   status: OutboundActionStatus;

@@ -126,17 +126,21 @@ export async function processAiPostInbound(
   } catch {
     await d.store.markAiDecisionUnknown(decisionId, 'chatwoot_history');
     audit('unknown_needs_review', { aiDecisionId: decisionId, conversationId: input.conversationId, reason: 'chatwoot_history' });
-    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'ai_active' };
+    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 
-  const finalClaim = await limiter.claim(input.recipient, decisionId);
+  let finalClaim: Awaited<ReturnType<typeof limiter.claim>>;
+  try {
+    finalClaim = await limiter.claim(input.recipient, decisionId);
+  } catch {
+    await d.store.markAiDecisionUnknown(decisionId, 'rate_limit');
+    audit('unknown_needs_review', { aiDecisionId: decisionId, conversationId: input.conversationId, reason: 'rate_limit' });
+    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'waiting_for_human' };
+  }
   if (!finalClaim.allowed) {
     audit('blocked', { aiDecisionId: decisionId, conversationId: input.conversationId, reason: finalClaim.reason });
-    return {
-      outcome: finalClaim.reason === 'suppressed' ? 'suppressed' : 'blocked',
-      aiDecisionId: decisionId,
-      state: 'ai_active',
-    };
+    await d.store.markAiDecisionUnknown(decisionId, 'rate_limit');
+    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 
   try {
@@ -152,7 +156,7 @@ export async function processAiPostInbound(
   } catch {
     await d.store.markAiDecisionUnknown(decisionId, 'telnyx_submission');
     audit('unknown_needs_review', { aiDecisionId: decisionId, conversationId: input.conversationId, reason: 'telnyx_submission' });
-    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'ai_active' };
+    return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 }
 

@@ -1,5 +1,5 @@
 export type AiConversationState = 'ai_active' | 'waiting_for_human' | 'human_active';
-export type AiOutcome = 'answered' | 'fallback' | 'escalated' | 'disabled' | 'provider_error' | 'validation_error';
+export type AiOutcome = 'answered' | 'fallback' | 'escalated' | 'disabled' | 'provider_error' | 'validation_error' | 'unknown_needs_review';
 export type AiDecisionStatus = 'claimed' | 'history_pending' | 'history_completed' | 'telnyx_pending' | 'completed' | 'unknown_needs_review';
 export type OpenAiRequest = { model:string; maxInputTokens:number; maxOutputTokens:number; systemInstruction:string; eventId:string; approvedContext:string; customerMessage:string; safeFallbackText:string };
 export type OpenAiDecision = { kind:'answer'; text:string } | { kind:'fallback'; text:string; escalate:true } | { kind:'error'; reason:'timeout'|'provider_error'|'malformed' };

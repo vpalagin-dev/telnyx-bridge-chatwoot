@@ -35,6 +35,8 @@ export type InboundResult =
       telnyxMessageId: string;
       chatwootConversationId: number;
       chatwootMessageId: number;
+       aiResult?: AiProcessResult;
+       aiError?: true;
     };
 
 export async function processTelnyxInbound(input: unknown, dependencies: Dependencies): Promise<InboundResult> {
@@ -77,8 +79,10 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
   try {
     const message = await dependencies.chatwoot.createIncomingMessage(conversation.id, data.payload.text);
     await dependencies.store.setEventStatus('telnyx', data.id, 'completed');
+    let aiResult: AiProcessResult | undefined;
+    let aiError: true | undefined;
     if (dependencies.postInbound) {
-      try { await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch { /* AI failure is isolated from inbound ACK */ }
+      try { aiResult = await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch { aiError = true; }
     }
     return {
       outcome: 'created',
@@ -86,6 +90,8 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
       telnyxMessageId: data.payload.id,
       chatwootConversationId: conversation.id,
       chatwootMessageId: message.id,
+      ...(aiResult ? { aiResult } : {}),
+      ...(aiError ? { aiError } : {}),
     };
   } catch (error) {
     await dependencies.store.setEventStatus('telnyx', data.id, 'unknown_needs_review');

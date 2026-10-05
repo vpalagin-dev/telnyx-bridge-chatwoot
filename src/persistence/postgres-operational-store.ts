@@ -47,9 +47,9 @@ export class PostgresOperationalStore implements OperationalStore {
   async getAiDecision(identityOrDecisionId:string): Promise<AiDecisionRecord|null> { const r=await this.#pool.query<AiDecisionRow>(`SELECT * FROM ${BRIDGE_SCHEMA}.ai_decisions WHERE inbound_identity=$1 OR ai_decision_id=$1 LIMIT 1`,[identityOrDecisionId]); return r.rows[0]?mapDecision(r.rows[0]):null; }
   async setAiDecisionOutcome(decisionId:string,outcome:AiDecisionOutcome):Promise<void> {
     await this.#transaction(async (client) => {
-      const decision = await client.query<{ conversation_id: number }>(
+      const decision = await client.query<{ conversation_id: number; state: AiConversationState }>(
         `UPDATE ${BRIDGE_SCHEMA}.ai_decisions
-         SET outcome=$2,status=$3,state=$4,updated_at=now()
+         SET outcome=CASE WHEN status='unknown_needs_review' THEN outcome ELSE $2 END,status=CASE WHEN status='unknown_needs_review' THEN status ELSE $3 END,state=CASE WHEN status='unknown_needs_review' THEN state ELSE $4 END,updated_at=now()
          WHERE ai_decision_id=$1
          RETURNING conversation_id`,
         [decisionId, outcome.outcome, outcome.status, outcome.state],
@@ -60,13 +60,13 @@ export class PostgresOperationalStore implements OperationalStore {
          VALUES($1,$2)
          ON CONFLICT (conversation_id) DO UPDATE
          SET state=EXCLUDED.state,updated_at=now()`,
-        [decision.rows[0]!.conversation_id, outcome.state],
+        [decision.rows[0]!.conversation_id, decision.rows[0]!.state],
       );
     });
   }
-  async recordAiHistoryMessage(decisionId:string,messageId:number):Promise<void> { const r=await this.#pool.query(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET chatwoot_history_message_id=$2,status='history_completed',updated_at=now() WHERE ai_decision_id=$1`,[decisionId,messageId]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); }
-  async markAiDecisionUnknown(decisionId:string,reason:AiDecisionUnknownReason):Promise<void> { const r=await this.#pool.query(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET status='unknown_needs_review',unknown_reason=$2,updated_at=now() WHERE ai_decision_id=$1`,[decisionId,reason]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); }
-  async recordAiTelnyxSubmission(decisionId:string,actionId:string,telnyxMessageId:string):Promise<void> { const r=await this.#pool.query(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET telnyx_action_id=$2,telnyx_message_id=$3,status='completed',updated_at=now() WHERE ai_decision_id=$1`,[decisionId,actionId,telnyxMessageId]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); }
+  async recordAiHistoryMessage(decisionId:string,messageId:number):Promise<void> { const r=await this.#pool.query(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET chatwoot_history_message_id=$2,status=CASE WHEN status='unknown_needs_review' THEN status ELSE 'history_completed' END,updated_at=now() WHERE ai_decision_id=$1`,[decisionId,messageId]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); }
+  async markAiDecisionUnknown(decisionId:string,reason:AiDecisionUnknownReason):Promise<void> { await this.#transaction(async client => { const r=await client.query<{conversation_id:number}>(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET outcome='unknown_needs_review',status='unknown_needs_review',state='waiting_for_human',unknown_reason=$2,updated_at=now() WHERE ai_decision_id=$1 RETURNING conversation_id`,[decisionId,reason]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); await client.query(`INSERT INTO ${BRIDGE_SCHEMA}.ai_conversation_state(conversation_id,state) VALUES($1,'waiting_for_human') ON CONFLICT(conversation_id) DO UPDATE SET state='waiting_for_human',updated_at=now()`,[r.rows[0]!.conversation_id]); }); }
+  async recordAiTelnyxSubmission(decisionId:string,actionId:string,telnyxMessageId:string):Promise<void> { await this.#transaction(async client => { const r=await client.query<{conversation_id:number;state:AiConversationState}>(`UPDATE ${BRIDGE_SCHEMA}.ai_decisions SET telnyx_action_id=$2,telnyx_message_id=$3,outcome=CASE WHEN status='unknown_needs_review' THEN outcome ELSE 'answered' END,status=CASE WHEN status='unknown_needs_review' THEN status ELSE 'completed' END,state=CASE WHEN status='unknown_needs_review' THEN state ELSE 'ai_active' END,updated_at=now() WHERE ai_decision_id=$1 RETURNING conversation_id,state`,[decisionId,actionId,telnyxMessageId]); if(r.rowCount!==1) throw new Error(`AI decision ${decisionId} not found`); await client.query(`INSERT INTO ${BRIDGE_SCHEMA}.ai_conversation_state(conversation_id,state) VALUES($1,$2) ON CONFLICT(conversation_id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()`,[r.rows[0]!.conversation_id,r.rows[0]!.state]); }); }
 
   async countAiRepliesSince(phone:string,cutoff:number):Promise<number> { const r=await this.#pool.query<{count:string}>(`SELECT count(*)::text AS count FROM ${BRIDGE_SCHEMA}.ai_reply_sends WHERE phone=$1 AND sent_at >= $2`,[phone,cutoff]); return Number(r.rows[0]?.count ?? 0); }
   async getLastAiReplyAt(phone:string):Promise<number|null> { const r=await this.#pool.query<{sent_at:string}>(`SELECT sent_at::text FROM ${BRIDGE_SCHEMA}.ai_reply_sends WHERE phone=$1 ORDER BY sent_at DESC LIMIT 1`,[phone]); return r.rows[0]?Number(r.rows[0].sent_at):null; }

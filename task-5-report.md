@@ -1,22 +1,27 @@
-# Task 5 Report: Railway worker
+# Task 5 Report: Durable AI terminal outcomes
 
 ## Implemented
 
-- Added `processReceipt` adapter that accepts only `message.received` inbound SMS payloads and invokes the existing `processTelnyxInbound` pipeline once.
-- Preserved the existing AI hook through the shared runtime pipeline. `BridgeStore` is used only for the existing inbound/AI operational state and is opened from configured `DATABASE_PATH`; receipt lifecycle remains authoritative in `PostgresStore`.
-- Added explicit retry classification with bounded exponential backoff. Ambiguous inbound side effects and exhausted retries become `needs_review`; duplicate claims are no-ops.
-- Added worker lifecycle with stable worker identity, PostgreSQL receipt ownership, Redis job consumption, PostgreSQL outbox job-to-receipt mapping, outbox recovery, and graceful shutdown.
-- Added `src/worker.ts`, `start:web`, and `start:worker` role scripts.
+- Successful AI replies now persist `outcome=answered`, `status=completed`, `state=ai_active`, Chatwoot history ID, and Telnyx action/message IDs through the PostgreSQL operational store.
+- PostgreSQL AI outcome and conversation-state projections are transactional. Unknown paths persist explicit `outcome=unknown_needs_review`, `status=unknown_needs_review`, and `state=waiting_for_human` with a durable reason.
+- Late history/submission/outcome writes preserve an existing unknown-review terminal state; they may retain provider IDs without downgrading review.
+- Post-history rate-limit/suppression rejection and rate-limit exceptions terminalize the AI decision as review-required instead of leaving a claimed decision dangling.
+- Inbound processing still completes the durable inbound receipt and returns its successful result, while exposing structured `aiResult`/`aiError` metadata rather than silently swallowing callback failures.
+- No SQLite runtime path was introduced; PostgreSQL remains authoritative.
+
+## TDD evidence
+
+- Added focused `tests/integration/ai/task5-outcomes.test.ts` coverage for answered persistence, unknown waiting-for-human projection, and late-success protection.
+- The focused tests were first run red (3 failures: provider_error persisted for answered, unknown state remained ai_active, and late success downgraded review), then passed after the minimal production changes.
 
 ## Verification
 
-- `npm exec vitest -- run tests/integration/worker.test.ts` — passing (7 tests).
-- `npm test` — passing (118 passed, 19 environment-gated skips).
-- `npm run typecheck` — passing.
-- `npm run build` — passing.
+- `npm exec vitest -- run tests/integration/ai/task5-outcomes.test.ts tests/integration/ai/fake-smoke.test.ts` — 5 passed.
+- Full `npm test` — 124 passed, 28 environment-gated skips.
+- `npm run typecheck` — passed.
+- `npm run build` — passed.
 
-The worker integration test uses fakes and does not require Railway credentials. PostgreSQL/Redis end-to-end execution remains controlled by `TEST_DATABASE_URL`/`TEST_REDIS_URL` in the persistence suites.
+## Remaining concerns
 
-## Operational note
-
-In postgres/redis mode, deploy web and worker with the same persistent `DATABASE_PATH` volume (or provide the future PostgreSQL operational adapter) so the existing BridgeStore idempotency, AI decisions, suppression, and human/campaign behavior remain durable. The worker does not claim those tables are PostgreSQL-native.
+- PostgreSQL integration suites remain environment-gated when `TEST_DATABASE_URL` is unavailable; the SQL paths are covered by the operational-store contract and focused fake-store tests.
+- If persistence itself is unavailable while recording a review outcome, the caller still surfaces that failure for receipt-level recovery rather than falsely claiming a durable terminal projection.

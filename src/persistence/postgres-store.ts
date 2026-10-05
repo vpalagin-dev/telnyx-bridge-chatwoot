@@ -212,6 +212,14 @@ export class PostgresStore {
     });
   }
 
+  async getOutboxReceipt(jobId: string): Promise<string | null> {
+    const result = await this.#pool.query<{ receipt_id: string }>(
+      `SELECT receipt_id FROM ${BRIDGE_SCHEMA}.webhook_outbox WHERE job_id = $1`,
+      [jobId],
+    );
+    return result.rowCount === 1 ? result.rows[0]!.receipt_id : null;
+  }
+
   async markOutboxDispatched(jobId: string, dispatcherId: string, leaseDurationMs = 30_000): Promise<void> {
     if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) {
       throw new Error('leaseDurationMs must be positive and finite');

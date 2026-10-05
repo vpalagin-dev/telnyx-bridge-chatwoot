@@ -29,12 +29,71 @@ CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.webhook_outbox (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts
-  ADD COLUMN IF NOT EXISTS result_code text;
-ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox
-  ADD COLUMN IF NOT EXISTS claimed_by text;
-ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox
-  ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
-` ;
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.processed_events (
+  provider text NOT NULL,
+  event_id text NOT NULL,
+  status text NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','completed','unknown_needs_review')),
+  received_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (provider, event_id)
+);
 
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.suppressions (
+  phone text PRIMARY KEY,
+  source_event_id text NOT NULL,
+  suppressed_at timestamptz NOT NULL DEFAULT now()
+);
 
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.conversation_bindings (
+  conversation_id bigint PRIMARY KEY,
+  phone text NOT NULL,
+  bound_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.outbound_actions (
+  action_id text PRIMARY KEY,
+  status text NOT NULL DEFAULT 'submitting' CHECK (status IN ('submitting','sent','unknown_needs_review')),
+  telnyx_message_id text,
+  claimed_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.ai_decisions (
+  inbound_identity text PRIMARY KEY,
+  conversation_id bigint NOT NULL,
+  inbound_message_id bigint NOT NULL,
+  event_id text NOT NULL,
+  ai_decision_id text UNIQUE NOT NULL,
+  chatwoot_history_message_id bigint,
+  telnyx_action_id text UNIQUE,
+  telnyx_message_id text,
+  outcome text NOT NULL,
+  status text NOT NULL,
+  state text NOT NULL,
+  model text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  unknown_reason text
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.ai_conversation_state (
+  conversation_id bigint PRIMARY KEY,
+  state text NOT NULL CHECK (state IN ('ai_active','waiting_for_human','human_active')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.ai_reply_sends (
+  phone text NOT NULL,
+  ai_decision_id text PRIMARY KEY,
+  sent_at bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS processed_events_event_idx ON ${BRIDGE_SCHEMA}.processed_events (provider, event_id);
+CREATE INDEX IF NOT EXISTS suppressions_phone_idx ON ${BRIDGE_SCHEMA}.suppressions (phone);
+CREATE INDEX IF NOT EXISTS conversation_bindings_phone_idx ON ${BRIDGE_SCHEMA}.conversation_bindings (phone);
+CREATE INDEX IF NOT EXISTS ai_decisions_inbound_idx ON ${BRIDGE_SCHEMA}.ai_decisions (inbound_identity);
+CREATE INDEX IF NOT EXISTS ai_decisions_history_idx ON ${BRIDGE_SCHEMA}.ai_decisions (chatwoot_history_message_id);
+CREATE INDEX IF NOT EXISTS ai_reply_sends_phone_time_idx ON ${BRIDGE_SCHEMA}.ai_reply_sends (phone, sent_at);
+
+ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ADD COLUMN IF NOT EXISTS result_code text;
+ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS claimed_by text;
+ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
+`;

@@ -115,15 +115,17 @@ export class PostgresStore {
     }
   }
 
-  async claimReceipt(receiptId: string, workerId: string): Promise<Receipt | null> {
+  async claimReceipt(receiptId: string, workerId: string, leaseDurationMs = 30_000): Promise<Receipt | null> {
+    if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) throw new Error('leaseDurationMs must be positive and finite');
+    const leaseCutoff = new Date(Date.now() - leaseDurationMs);
     return this.#transaction(async (client) => {
       const candidate = await client.query<ReceiptRow>(
         `SELECT * FROM ${BRIDGE_SCHEMA}.webhook_receipts
          WHERE receipt_id = $1
-           AND status IN ('pending', 'retryable')
-           AND next_attempt_at <= now()
+           AND ((status IN ('pending', 'retryable') AND next_attempt_at <= now())
+             OR (status = 'processing' AND locked_at <= $2))
          FOR UPDATE SKIP LOCKED`,
-        [receiptId],
+        [receiptId, leaseCutoff],
       );
       if (candidate.rowCount !== 1) return null;
       const claimed = await client.query<ReceiptRow>(

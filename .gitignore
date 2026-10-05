@@ -33,6 +33,8 @@ desktop.ini
 .agents/
 .windsurf/
 .gemini/
+.superpowers/
+/docs/superpowers/
 
 # Spec Kit local/runtime only
 .specify/feature.json

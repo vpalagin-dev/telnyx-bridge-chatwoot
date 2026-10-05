@@ -23,6 +23,21 @@ class FakeTelnyx implements TelnyxClient {
   async sendSms(input: TelnyxSendInput) { this.calls.push(input); return { id: 'fake-telnyx-id' }; }
 }
 
+class FakeReceiptAdapter {
+  insertCalls = 0;
+  receipts = new Map<string, string>();
+
+  async insertReceipt(input: { provider: string; providerEventId: string; rawPayload: unknown }) {
+    const key = `${input.provider}:${input.providerEventId}`;
+    const existing = this.receipts.get(key);
+    if (existing) return { inserted: false, receiptId: existing };
+    this.insertCalls += 1;
+    const receiptId = `receipt-${this.insertCalls}`;
+    this.receipts.set(key, receiptId);
+    return { inserted: true, receiptId };
+  }
+}
+
 const resources: Array<{ close(): void | Promise<void> }> = [];
 afterEach(async () => {
   await Promise.all(resources.splice(0).map((resource) => resource.close()));
@@ -69,6 +84,52 @@ describe('webhook routes', () => {
     expect((await request()).statusCode).toBe(200);
     expect((await request()).statusCode).toBe(200);
     expect(chatwoot.messageCalls).toBe(1);
+  });
+
+  it('persists a signed postgres_redis webhook once and acknowledges without downstream processing', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const store = new BridgeStore(':memory:');
+    const chatwoot = new FakeChatwoot();
+    const telnyx = new FakeTelnyx();
+    const receipts = new FakeReceiptAdapter();
+    const cfg = { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), persistence: { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()).persistence, mode: 'postgres_redis' as const } };
+    const app = buildApp({ config: cfg, store, chatwoot, telnyx, receiptAdapter: receipts });
+    resources.push(app, store);
+    const body = fixture('../fixtures/telnyx/message-received.json');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = sign(null, Buffer.from(`${timestamp}|${body}`), privateKey).toString('base64');
+    const request = () => app.inject({
+      method: 'POST', url: '/webhooks/telnyx', payload: body,
+      headers: { 'content-type': 'application/json', 'telnyx-timestamp': timestamp, 'telnyx-signature-ed25519': signature },
+    });
+
+    const first = await request();
+    const second = await request();
+
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ accepted: true, receiptId: 'receipt-1' });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({ accepted: true, receiptId: 'receipt-1' });
+    expect(receipts.insertCalls).toBe(1);
+    expect(chatwoot.messageCalls).toBe(0);
+    expect(telnyx.calls).toHaveLength(0);
+  });
+
+  it('rejects an invalid postgres_redis Telnyx signature without persistence', async () => {
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const store = new BridgeStore(':memory:');
+    const receipts = new FakeReceiptAdapter();
+    const cfg = { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), persistence: { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()).persistence, mode: 'postgres_redis' as const } };
+    const app = buildApp({ config: cfg, store, chatwoot: new FakeChatwoot(), telnyx: new FakeTelnyx(), receiptAdapter: receipts });
+    resources.push(app, store);
+
+    const response = await app.inject({
+      method: 'POST', url: '/webhooks/telnyx', payload: fixture('../fixtures/telnyx/message-received.json'),
+      headers: { 'content-type': 'application/json', 'telnyx-timestamp': String(Math.floor(Date.now() / 1000)), 'telnyx-signature-ed25519': 'invalid' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(receipts.insertCalls).toBe(0);
   });
 
   it('accepts the base64 raw Ed25519 public key format used by Telnyx', async () => {

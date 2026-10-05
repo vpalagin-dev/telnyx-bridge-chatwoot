@@ -16,9 +16,11 @@
 ## Verification
 
 - TDD red phase: `npm exec vitest -- run tests/integration/webhooks.test.ts` failed on the new receipt-first response assertion while the existing route still processed inline.
-- Targeted green phase: `npm exec vitest -- run tests/integration/webhooks.test.ts` — 13 tests passed.
+- Targeted red phase: `npm exec vitest -- run tests/integration/webhooks.test.ts` — 2 new regression tests failed before the fix.
+- Targeted green phase: `npm exec vitest -- run tests/integration/webhooks.test.ts` — 15 tests passed.
 - Typecheck: `npm run typecheck` — passed.
-- Full suite: `npm test` — 109 passed, 19 skipped across 22 files.
+- Full suite: `npm test` — 111 passed, 19 skipped across 22 files (130 total).
+- Verification commit SHA-1: `8b149e98371a6e7d66a5752508b6e06962092f9b`.
 
 ## Limitations
 

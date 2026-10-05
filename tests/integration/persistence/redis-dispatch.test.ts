@@ -140,6 +140,30 @@ describe('RedisDispatch configuration', () => {
     await expect(loop.stop()).resolves.toBeUndefined();
   });
 
+  it('contains an async onError callback rejection inside the recovery loop', async () => {
+    const store = {
+      claimOutboxBatch: vi.fn().mockRejectedValue(new Error('store unavailable')),
+    } as never;
+    const dispatch = {} as never;
+    const onError = vi.fn(async () => {
+      throw new Error('async error handler failed');
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+    try {
+      const loop = startOutboxRecoveryLoop(store, dispatch, { intervalMs: 60_000, onError });
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+      await expect(loop.stop()).resolves.toBeUndefined();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
+  });
+
   if (!redisUrl) {
     it.skip('requires TEST_REDIS_URL and never falls back to Railway credentials', () => {
       expect.fail('Set TEST_REDIS_URL to run Redis integration tests');

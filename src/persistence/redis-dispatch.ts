@@ -14,7 +14,7 @@ export type RecoveryOptions = {
   batchSize?: number;
   leaseDurationMs?: number;
   intervalMs?: number;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown) => void | Promise<void>;
 };
 
 /**
@@ -92,17 +92,27 @@ export class RedisDispatch {
   }
 
   async close(): Promise<void> {
+    let closeError: unknown;
+    const attempt = async (operation: () => Promise<unknown>): Promise<void> => {
+      try {
+        await operation();
+      } catch (error) {
+        closeError ??= error;
+      }
+    };
+
     try {
       if (this.#subscribed && this.#subscriber.isReady) {
-        await this.#subscriber.pUnsubscribe(`${this.#prefix}*`);
+        await attempt(() => this.#subscriber.pUnsubscribe(`${this.#prefix}*`));
       }
-      if (this.#subscriber.isOpen) await this.#subscriber.quit();
-      if (this.#publisher.isOpen) await this.#publisher.quit();
+      if (this.#subscriber.isOpen) await attempt(() => this.#subscriber.quit());
+      if (this.#publisher.isOpen) await attempt(() => this.#publisher.quit());
     } finally {
       this.#consuming = false;
       this.#subscribed = false;
       this.#seenJobIds.clear();
     }
+    if (closeError) throw closeError;
   }
 
   #channel(jobId: string): string {
@@ -155,9 +165,9 @@ export function startOutboxRecoveryLoop(
     if (stopped || running) return;
     running = republishUndispatched(store, dispatch, dispatcherId, batchSize, leaseDurationMs)
       .then(() => undefined)
-      .catch((error) => {
+      .catch(async (error) => {
         try {
-          options.onError?.(error);
+          await Promise.resolve(options.onError?.(error));
         } catch {
           // Error reporting must not create an unhandled rejection in the loop.
         }

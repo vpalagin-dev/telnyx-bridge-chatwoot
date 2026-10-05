@@ -199,6 +199,18 @@ suite('PostgresStore (disposable TEST_DATABASE_URL only)', () => {
     await expect(store.markOutboxDispatched(job!.jobId, 'dispatcher-b')).rejects.toThrow(/ownership/i);
     await store.markOutboxDispatched(job!.jobId, 'dispatcher-a');
   });
+
+  it('rejects the claiming dispatcher after its outbox lease expires', async () => {
+    const inserted = await store.insertReceipt({
+      provider: 'telnyx',
+      providerEventId: `outbox-expired-owner-${randomUUID()}`,
+      rawPayload: { outbox: 'expired-owner' },
+    });
+    const [job] = await store.claimOutboxBatch(1, 'dispatcher-expired');
+    expect(job?.receiptId).toBe(inserted.receiptId);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(store.markOutboxDispatched(job!.jobId, 'dispatcher-expired', 1)).rejects.toThrow(/ownership/i);
+  });
 }, 30_000);
 
 if (!databaseUrl) {

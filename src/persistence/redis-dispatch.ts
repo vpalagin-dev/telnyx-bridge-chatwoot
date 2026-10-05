@@ -28,13 +28,34 @@ export class RedisDispatch {
   readonly #seenJobIds = new Set<string>();
   #consuming = false;
   #subscribed = false;
+  #lastRedisError: unknown;
 
   constructor(redisUrl: string, prefix = process.env.BRIDGE_REDIS_PREFIX ?? 'telnyx-bridge:') {
     if (!redisUrl) throw new Error('REDIS_URL is required');
     if (!prefix) throw new Error('BRIDGE_REDIS_PREFIX must not be empty');
+    if (!/^[A-Za-z0-9:_-]+$/.test(prefix)) {
+      throw new Error('BRIDGE_REDIS_PREFIX contains unsafe channel characters');
+    }
     this.#prefix = prefix;
-    this.#publisher = createClient({ url: redisUrl });
+    const options = {
+      url: redisUrl,
+      socket: {
+        connectTimeout: 5_000,
+        reconnectStrategy: (retries: number) =>
+          retries >= 3 ? new Error('Redis reconnect limit exceeded') : Math.min(100 * 2 ** retries, 1_000),
+      },
+    };
+    this.#publisher = createClient(options);
     this.#subscriber = this.#publisher.duplicate();
+    const recordRedisError = (error: unknown): void => {
+      this.#lastRedisError = error;
+    };
+    this.#publisher.on('error', recordRedisError);
+    this.#subscriber.on('error', recordRedisError);
+  }
+
+  get lastRedisError(): unknown {
+    return this.#lastRedisError;
   }
 
   async publish(job: RedisJob): Promise<void> {
@@ -47,27 +68,41 @@ export class RedisDispatch {
   async consume(handler: RedisJobHandler): Promise<void> {
     if (this.#consuming) throw new Error('Redis dispatch consumer is already running');
     this.#consuming = true;
-    await this.#subscriber.connect();
-    await this.#subscriber.pSubscribe(`${this.#prefix}*`, (message, channel) => {
-      const jobId = this.#jobIdFromChannel(channel, message);
-      if (this.#seenJobIds.has(jobId)) return;
-      this.#seenJobIds.add(jobId);
-      void Promise.resolve(handler(jobId)).catch(() => {
-        // A failed handler must be eligible for a later notification/recovery.
-        this.#seenJobIds.delete(jobId);
+    try {
+      if (!this.#subscriber.isOpen) await this.#subscriber.connect();
+      await this.#subscriber.pSubscribe(`${this.#prefix}*`, (message, channel) => {
+        const jobId = this.#jobIdFromChannel(channel, message);
+        if (this.#seenJobIds.has(jobId)) return;
+        this.#seenJobIds.add(jobId);
+        void Promise.resolve()
+          .then(() => handler(jobId))
+          .catch(() => {
+            // A failed handler must be eligible for a later notification/recovery.
+            this.#seenJobIds.delete(jobId);
+          });
       });
-    });
-    this.#subscribed = true;
+      this.#subscribed = true;
+    } catch (error) {
+      this.#consuming = false;
+      this.#subscribed = false;
+      this.#seenJobIds.clear();
+      if (this.#subscriber.isOpen) await this.#subscriber.quit().catch(() => undefined);
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
-    if (this.#subscribed && this.#subscriber.isReady) {
-      await this.#subscriber.pUnsubscribe(`${this.#prefix}*`);
+    try {
+      if (this.#subscribed && this.#subscriber.isReady) {
+        await this.#subscriber.pUnsubscribe(`${this.#prefix}*`);
+      }
+      if (this.#subscriber.isOpen) await this.#subscriber.quit();
+      if (this.#publisher.isOpen) await this.#publisher.quit();
+    } finally {
+      this.#consuming = false;
+      this.#subscribed = false;
+      this.#seenJobIds.clear();
     }
-    if (this.#subscriber.isOpen) await this.#subscriber.quit();
-    if (this.#publisher.isOpen) await this.#publisher.quit();
-    this.#consuming = false;
-    this.#subscribed = false;
   }
 
   #channel(jobId: string): string {
@@ -95,7 +130,7 @@ export async function republishUndispatched(
   let published = 0;
   for (const job of jobs) {
     await dispatch.publish(job);
-    await store.markOutboxDispatched(job.jobId, dispatcherId);
+    await store.markOutboxDispatched(job.jobId, dispatcherId, leaseDurationMs);
     published += 1;
   }
   return published;
@@ -110,6 +145,9 @@ export function startOutboxRecoveryLoop(
   const batchSize = options.batchSize ?? 100;
   const leaseDurationMs = options.leaseDurationMs ?? 30_000;
   const intervalMs = options.intervalMs ?? 5_000;
+  assertPositiveFinite('batchSize', batchSize);
+  assertPositiveFinite('leaseDurationMs', leaseDurationMs);
+  assertPositiveFinite('intervalMs', intervalMs);
   let stopped = false;
   let running: Promise<void> | undefined;
 
@@ -117,7 +155,13 @@ export function startOutboxRecoveryLoop(
     if (stopped || running) return;
     running = republishUndispatched(store, dispatch, dispatcherId, batchSize, leaseDurationMs)
       .then(() => undefined)
-      .catch((error) => options.onError?.(error))
+      .catch((error) => {
+        try {
+          options.onError?.(error);
+        } catch {
+          // Error reporting must not create an unhandled rejection in the loop.
+        }
+      })
       .finally(() => {
         running = undefined;
       });
@@ -135,4 +179,10 @@ export function startOutboxRecoveryLoop(
       await running;
     },
   };
+}
+
+function assertPositiveFinite(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be positive and finite`);
+  }
 }

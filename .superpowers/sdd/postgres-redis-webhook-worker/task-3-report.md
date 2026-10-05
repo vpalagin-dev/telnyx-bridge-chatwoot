@@ -4,18 +4,20 @@
 
 - Added `src/persistence/redis-dispatch.ts` using the `redis` package and an injected `REDIS_URL` value.
 - `RedisDispatch.publish(jobOrJobId)` publishes the job ID to a channel formed as `BRIDGE_REDIS_PREFIX + jobId`.
-- `RedisDispatch.consume(handler)` subscribes only to the configured prefix, extracts job IDs, and suppresses duplicate notifications within the consumer process.
-- `RedisDispatch.close()` cleanly unsubscribes and closes publisher/subscriber clients.
-- Added `republishUndispatched`, which claims PostgreSQL outbox rows, publishes each row, and marks it dispatched only after a successful Redis acknowledgement. A publish failure leaves the PostgreSQL row undispatched for lease-based recovery.
-- Added `startOutboxRecoveryLoop` with configurable batch size, lease duration, interval, dispatcher ID, and error callback.
+- `RedisDispatch.consume(handler)` subscribes only to the configured safe-character prefix, defers handler invocation with `Promise.resolve().then(...)`, removes failed handlers from dedupe, and resets setup state on failure.
+- `RedisDispatch.close()` cleanly unsubscribes, closes both clients, clears seen IDs, and supports reuse.
+- Publisher/subscriber errors are observed and recorded; Redis reconnect attempts are bounded so initial connection failures reject.
+- Added `republishUndispatched`, which claims PostgreSQL outbox rows, publishes each row, and marks it dispatched only after a successful Redis acknowledgement while threading the lease duration through the mark. A publish failure leaves the PostgreSQL row undispatched for lease-based recovery.
+- `PostgresStore.markOutboxDispatched` now requires the claim to belong to the dispatcher and remain within its lease.
+- Added `startOutboxRecoveryLoop` with positive finite batch/lease/interval validation and protected error callbacks.
 - No webhook route or worker changes were made.
 
 ## Tests and results
 
 - RED verification: `npm exec vitest -- run tests/integration/persistence/redis-dispatch.test.ts` failed before implementation because `src/persistence/redis-dispatch.js` did not exist.
-- Targeted integration suite: `npm exec vitest -- run tests/integration/persistence/redis-dispatch.test.ts` — tests skip clearly when `TEST_REDIS_URL` is absent; no Railway credentials are used. Live Redis execution requires a disposable `TEST_REDIS_URL`.
+- Targeted persistence suite: `npm exec vitest -- run tests/integration/persistence/redis-dispatch.test.ts tests/integration/persistence/postgres-store.test.ts` — Redis configuration tests passed; live Redis/PostgreSQL tests skip clearly when `TEST_REDIS_URL` or `TEST_DATABASE_URL` is absent. No Railway credentials are used.
 - Typecheck: `npm run typecheck` — passed.
-- Full `npm test`: passed — 19 test files passed, 2 skipped; 97 tests passed and 16 skipped. Redis and PostgreSQL integration suites skipped because `TEST_REDIS_URL` and `TEST_DATABASE_URL` were absent.
+- Full `npm test`: passed — 20 test files passed, 1 skipped; 105 tests passed and 19 skipped. PostgreSQL integration tests skipped because `TEST_DATABASE_URL` was absent.
 
 ## Limitations
 
@@ -24,8 +26,8 @@
 
 ## Commit
 
-Implementation commit: `5fdabae` (`feat(queue): add redis dispatch with postgres recovery`).
+Review-fix commit: `147a2a5` (`fix(queue): address task 3 review findings`).
 
 ## Verification update
 
-- Report finalized after the implementation commit; the full-suite result above is from the fresh `npm test` run in this session.
+- Report finalized after the review-fix commit; the full-suite result above is from the fresh `npm test` run in this session.

@@ -212,12 +212,16 @@ export class PostgresStore {
     });
   }
 
-  async markOutboxDispatched(jobId: string, dispatcherId: string): Promise<void> {
+  async markOutboxDispatched(jobId: string, dispatcherId: string, leaseDurationMs = 30_000): Promise<void> {
+    if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) {
+      throw new Error('leaseDurationMs must be positive and finite');
+    }
+    const leaseCutoff = new Date(Date.now() - leaseDurationMs);
     const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_outbox
        SET dispatched_at = now()
-       WHERE job_id = $1 AND dispatched_at IS NULL AND claimed_by = $2`,
-      [jobId, dispatcherId],
+       WHERE job_id = $1 AND dispatched_at IS NULL AND claimed_by = $2 AND claimed_at > $3`,
+      [jobId, dispatcherId, leaseCutoff],
     );
     if (result.rowCount !== 1) {
       throw new Error(`Outbox job ${jobId} is not owned by dispatcher ${dispatcherId}`);

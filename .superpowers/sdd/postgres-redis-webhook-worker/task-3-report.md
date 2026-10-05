@@ -26,7 +26,7 @@
 
 ## Commit
 
-Review-fix commit: `147a2a5` (`fix(queue): address task 3 review findings`).
+Review-fix commit: `30d653f` (`fix(queue): address task 3 review findings`).
 
 ## Verification update
 

@@ -107,3 +107,24 @@ feat(storage): configure postgres and redis runtime
 ```
 
 The report itself is intentionally separate from the focused implementation commit so the implementation hash recorded above remains stable.
+
+## Round 1 reviewer fix
+
+- Changed `.env.example` from `PERSISTENCE_MODE=postgres_redis` to `PERSISTENCE_MODE=sqlite`, so copying the example for local development continues to work with blank `DATABASE_URL` and `REDIS_URL` values.
+- Added a focused unit test proving blank `DATABASE_URL` and `REDIS_URL` are rejected when `PERSISTENCE_MODE=postgres_redis`.
+- No runtime implementation behavior changed.
+
+Verification after the fix:
+
+```text
+npm exec vitest -- run tests/unit/config.test.ts
+Test Files  1 passed (1)
+Tests       16 passed (16)
+
+npm run typecheck
+exit code 0
+
+npm test
+Test Files  19 passed (19)
+Tests       97 passed | 1 skipped (98)
+```

@@ -64,6 +64,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig(environment)).toThrowError(new RegExp(missingField));
   });
 
+  it('rejects blank postgres and redis URLs in postgres_redis mode', () => {
+    expect(() => loadConfig({
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      HOST: '0.0.0.0',
+      PERSISTENCE_MODE: 'postgres_redis',
+      DATABASE_URL: '',
+      REDIS_URL: '',
+    })).toThrowError(/DATABASE_URL.*REDIS_URL|REDIS_URL.*DATABASE_URL/);
+  });
+
   it('preserves sqlite configuration without postgres or redis URLs', () => {
     const config = loadConfig({
       ...validEnvironment,

@@ -10,7 +10,11 @@ import { startOutboxRecoveryLoop, type RedisDispatch, type RecoveryLoop } from '
 
 export type WorkerReceiptStore = Pick<PostgresStore, 'claimReceipt' | 'completeReceipt' | 'retryReceipt' | 'markReviewRequired'> & {
   getOutboxReceipt?: (jobId: string) => Promise<string | null>;
+  claimOutboxPublicationBatch?: PostgresStore['claimOutboxPublicationBatch'];
+  markOutboxPublished?: PostgresStore['markOutboxPublished'];
+  /** @deprecated compatibility with Task 3 stores. */
   claimOutboxBatch?: PostgresStore['claimOutboxBatch'];
+  /** @deprecated compatibility with Task 3 stores. */
   markOutboxDispatched?: PostgresStore['markOutboxDispatched'];
 };
 
@@ -63,7 +67,7 @@ export async function processReceipt(receipt: Receipt, deps: ReceiptProcessorDep
   } catch (cause) {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     const eventId = readEventId(receipt.rawPayload);
-    if (eventId && deps.operationalStore?.getEventStatus('telnyx', eventId) === 'unknown_needs_review') {
+    if (eventId && await deps.operationalStore?.getEventStatus('telnyx', eventId) === 'unknown_needs_review') {
       return { status: 'needs_review', reason: 'inbound side effect outcome is ambiguous', error };
     }
     if (!isRetryableError(error)) return { status: 'needs_review', reason: 'inbound processing failed without a retry-safe classification', error };
@@ -145,21 +149,27 @@ export function startWorker(options: WorkerOptions, deps: WorkerDependencies): W
     else await deps.store.markReviewRequired(receipt.receiptId, workerId, result.reason);
   };
 
-  const enqueue = (receiptId: string): void => {
-    if (stopping) return;
-    const task = handleReceiptId(receiptId).catch(() => undefined).finally(() => active.delete(task));
+  const enqueue = (receiptId: string): Promise<void> => {
+    if (stopping) return Promise.resolve();
+    const task = handleReceiptId(receiptId);
     active.add(task);
+    void task.then(
+      () => active.delete(task),
+      () => active.delete(task),
+    );
+    return task;
   };
 
   if (deps.dispatch) {
     void deps.dispatch.consume(async (jobId) => {
       const receiptId = deps.store.getOutboxReceipt ? await deps.store.getOutboxReceipt(jobId) : jobId;
-      if (receiptId) enqueue(receiptId);
+      if (receiptId) await enqueue(receiptId);
     }).then(() => {
-      if (deps.store.claimOutboxBatch && deps.store.markOutboxDispatched) {
+      if ((deps.store.claimOutboxPublicationBatch ?? deps.store.claimOutboxBatch)
+        && (deps.store.markOutboxPublished ?? deps.store.markOutboxDispatched)) {
         recovery = startOutboxRecoveryLoop(deps.store as PostgresStore, deps.dispatch as RedisDispatch, { dispatcherId: workerId });
       }
-    }).catch(() => undefined);
+    });
   }
 
   if (deps.receiptIds) {

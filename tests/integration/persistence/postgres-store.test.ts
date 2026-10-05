@@ -200,6 +200,38 @@ suite('PostgresStore (disposable TEST_DATABASE_URL only)', () => {
     await store.markOutboxDispatched(job!.jobId, 'dispatcher-a');
   });
 
+  it('republishes a previously published job after its publication lease expires', async () => {
+    const inserted = await store.insertReceipt({
+      provider: 'telnyx',
+      providerEventId: `outbox-publication-lease-${randomUUID()}`,
+      rawPayload: { outbox: 'publication-lease' },
+    });
+    const [first] = await store.claimOutboxBatch(1, 'dispatcher-first', 30_000);
+    expect(first?.receiptId).toBe(inserted.receiptId);
+    await store.markOutboxDispatched(first!.jobId, 'dispatcher-first', 30_000);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const [recovered] = await store.claimOutboxBatch(10, 'dispatcher-recovery', 1);
+    expect(recovered?.jobId).toBe(first!.jobId);
+    expect(recovered?.dispatchedAt).not.toBeNull();
+    await store.markOutboxDispatched(recovered!.jobId, 'dispatcher-recovery', 30_000);
+  });
+
+  it('does not republish an outbox row after its receipt reaches a terminal state', async () => {
+    const inserted = await store.insertReceipt({
+      provider: 'telnyx',
+      providerEventId: `outbox-terminal-${randomUUID()}`,
+      rawPayload: { outbox: 'terminal' },
+    });
+    const [job] = await store.claimOutboxPublicationBatch(1, 'dispatcher-terminal', 30_000);
+    expect(job?.receiptId).toBe(inserted.receiptId);
+    await store.markOutboxPublished(job!.jobId, 'dispatcher-terminal', 30_000);
+    await expect(store.claimReceipt(inserted.receiptId, 'worker-terminal')).resolves.not.toBeNull();
+    await store.completeReceipt(inserted.receiptId, 'worker-terminal');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(store.claimOutboxPublicationBatch(10, 'dispatcher-after-terminal', 1)).resolves.toEqual([]);
+  });
+
   it('rejects the claiming dispatcher after its outbox lease expires', async () => {
     const inserted = await store.insertReceipt({
       provider: 'telnyx',

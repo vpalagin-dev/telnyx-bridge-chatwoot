@@ -24,6 +24,12 @@ export type Receipt = {
 export type OutboxJob = {
   jobId: string;
   receiptId: string;
+  /** Last successful Redis publication; expires as a recovery lease. */
+  publishedAt: Date | null;
+  /** Dispatcher publication lease, independent from receipt worker ownership. */
+  publicationClaimedBy: string | null;
+  publicationClaimedAt: Date | null;
+  /** @deprecated aliases for the previous publication-lease names. */
   dispatchedAt: Date | null;
   claimedBy: string | null;
   claimedAt: Date | null;
@@ -55,9 +61,9 @@ type ReceiptRow = {
 type OutboxRow = {
   job_id: string;
   receipt_id: string;
-  dispatched_at: Date | null;
-  claimed_by: string | null;
-  claimed_at: Date | null;
+  published_at: Date | null;
+  publication_claimed_by: string | null;
+  publication_claimed_at: Date | null;
   created_at: Date;
 };
 
@@ -183,35 +189,43 @@ export class PostgresStore {
     assertOwnedTransition(result.rowCount, receiptId, workerId);
   }
 
-  async claimOutboxBatch(
+  async claimOutboxPublicationBatch(
     limit: number,
     dispatcherId: string,
     leaseDurationMs = 30_000,
   ): Promise<OutboxJob[]> {
     const normalizedLimit = Math.max(0, Math.floor(limit));
     if (normalizedLimit === 0) return [];
-    const leaseCutoff = new Date(Date.now() - Math.max(0, leaseDurationMs));
+    if (!Number.isFinite(leaseDurationMs) || leaseDurationMs < 0) throw new Error('leaseDurationMs must be non-negative and finite');
+    const leaseCutoff = new Date(Date.now() - leaseDurationMs);
     return this.#transaction(async (client) => {
       const result = await client.query<OutboxRow>(
         `WITH candidates AS (
-           SELECT job_id
-           FROM ${BRIDGE_SCHEMA}.webhook_outbox
-           WHERE dispatched_at IS NULL
-             AND (claimed_at IS NULL OR claimed_at <= $2)
-           ORDER BY created_at, job_id
+           SELECT outbox.job_id
+           FROM ${BRIDGE_SCHEMA}.webhook_outbox AS outbox
+           JOIN ${BRIDGE_SCHEMA}.webhook_receipts AS receipt ON receipt.receipt_id = outbox.receipt_id
+           WHERE receipt.status NOT IN ('completed', 'needs_review')
+             AND (outbox.published_at IS NULL OR outbox.published_at <= $2)
+             AND (outbox.publication_claimed_at IS NULL OR outbox.publication_claimed_at <= $2)
+           ORDER BY outbox.created_at, outbox.job_id
            LIMIT $1
-           FOR UPDATE SKIP LOCKED
+           FOR UPDATE OF outbox SKIP LOCKED
          )
          UPDATE ${BRIDGE_SCHEMA}.webhook_outbox AS outbox
-         SET claimed_by = $3, claimed_at = now()
+         SET publication_claimed_by = $3, publication_claimed_at = now()
          FROM candidates
          WHERE outbox.job_id = candidates.job_id
-         RETURNING outbox.job_id, outbox.receipt_id, outbox.dispatched_at,
-                   outbox.claimed_by, outbox.claimed_at, outbox.created_at`,
+         RETURNING outbox.job_id, outbox.receipt_id, outbox.published_at,
+                   outbox.publication_claimed_by, outbox.publication_claimed_at, outbox.created_at`,
         [normalizedLimit, leaseCutoff, dispatcherId],
       );
       return result.rows.map(mapOutboxJob);
     });
+  }
+
+  /** @deprecated Use claimOutboxPublicationBatch; retained for callers from Task 3. */
+  async claimOutboxBatch(limit: number, dispatcherId: string, leaseDurationMs = 30_000): Promise<OutboxJob[]> {
+    return this.claimOutboxPublicationBatch(limit, dispatcherId, leaseDurationMs);
   }
 
   async getOutboxReceipt(jobId: string): Promise<string | null> {
@@ -222,20 +236,25 @@ export class PostgresStore {
     return result.rowCount === 1 ? result.rows[0]!.receipt_id : null;
   }
 
-  async markOutboxDispatched(jobId: string, dispatcherId: string, leaseDurationMs = 30_000): Promise<void> {
+  async markOutboxPublished(jobId: string, dispatcherId: string, leaseDurationMs = 30_000): Promise<void> {
     if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) {
       throw new Error('leaseDurationMs must be positive and finite');
     }
     const leaseCutoff = new Date(Date.now() - leaseDurationMs);
     const result = await this.#pool.query(
       `UPDATE ${BRIDGE_SCHEMA}.webhook_outbox
-       SET dispatched_at = now()
-       WHERE job_id = $1 AND dispatched_at IS NULL AND claimed_by = $2 AND claimed_at > $3`,
+       SET published_at = now(), publication_claimed_by = NULL, publication_claimed_at = NULL
+       WHERE job_id = $1 AND publication_claimed_by = $2 AND publication_claimed_at > $3`,
       [jobId, dispatcherId, leaseCutoff],
     );
     if (result.rowCount !== 1) {
       throw new Error(`Outbox job ${jobId} is not owned by dispatcher ${dispatcherId}`);
     }
+  }
+
+  /** @deprecated Use markOutboxPublished; retained for callers from Task 3. */
+  async markOutboxDispatched(jobId: string, dispatcherId: string, leaseDurationMs = 30_000): Promise<void> {
+    return this.markOutboxPublished(jobId, dispatcherId, leaseDurationMs);
   }
 
   async #transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -276,9 +295,12 @@ function mapOutboxJob(row: OutboxRow): OutboxJob {
   return {
     jobId: row.job_id,
     receiptId: row.receipt_id,
-    dispatchedAt: row.dispatched_at,
-    claimedBy: row.claimed_by,
-    claimedAt: row.claimed_at,
+    publishedAt: row.published_at,
+    publicationClaimedBy: row.publication_claimed_by,
+    publicationClaimedAt: row.publication_claimed_at,
+    dispatchedAt: row.published_at,
+    claimedBy: row.publication_claimed_by,
+    claimedAt: row.publication_claimed_at,
     createdAt: row.created_at,
   };
 }

@@ -57,10 +57,21 @@ describe('worker receipt processing', () => {
 
   it('returns review for an inbound pipeline that already has ambiguous state', async () => {
     const deps = processorDeps({
-      operationalStore: { getEventStatus: () => 'unknown_needs_review' } as never,
+      operationalStore: { getEventStatus: async () => 'unknown_needs_review' } as never,
       processInbound: async () => { throw new Error('downstream failure'); },
     });
     await expect(processReceipt(receipt(), deps)).resolves.toMatchObject({ status: 'needs_review' });
+  });
+
+  it('awaits the operational status before classifying a failed inbound pipeline', async () => {
+    let statusResolved = false;
+    const deps = processorDeps({
+      operationalStore: { getEventStatus: async () => { await Promise.resolve(); statusResolved = true; return 'unknown_needs_review'; } } as never,
+      processInbound: async () => { throw new Error('downstream failure'); },
+    });
+    const result = await processReceipt(receipt(), deps);
+    expect(statusResolved).toBe(true);
+    expect(result).toMatchObject({ status: 'needs_review', reason: 'inbound side effect outcome is ambiguous' });
   });
 
   it('classifies explicitly retryable failures and applies bounded exponential delay', async () => {
@@ -102,5 +113,19 @@ describe('runWorker', () => {
     await worker.stop();
     expect(stopped).toBe(true);
     expect(store.completed).toBe(1);
+  });
+
+  it('awaits Redis notification processing and propagates transition failures', async () => {
+    const store = fakeStore(receipt());
+    store.completeReceipt = async () => { throw new Error('durable transition failed'); };
+    let handler: ((jobId: string) => Promise<void>) | undefined;
+    const dispatch = {
+      consume: vi.fn(async (callback: (jobId: string) => Promise<void>) => { handler = callback; }),
+      close: vi.fn(async () => undefined),
+    };
+    const worker = startWorker({ workerId: 'worker-1' }, { store, dispatch, processor: processorDeps() });
+    await vi.waitFor(() => expect(handler).toBeDefined());
+    await expect(handler!('receipt-1')).rejects.toThrow('durable transition failed');
+    await worker.stop();
   });
 });

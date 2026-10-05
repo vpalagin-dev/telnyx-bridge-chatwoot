@@ -70,16 +70,18 @@ export class RedisDispatch {
     this.#consuming = true;
     try {
       if (!this.#subscriber.isOpen) await this.#subscriber.connect();
-      await this.#subscriber.pSubscribe(`${this.#prefix}*`, (message, channel) => {
+      await this.#subscriber.pSubscribe(`${this.#prefix}*`, async (message, channel) => {
         const jobId = this.#jobIdFromChannel(channel, message);
         if (this.#seenJobIds.has(jobId)) return;
         this.#seenJobIds.add(jobId);
-        void Promise.resolve()
-          .then(() => handler(jobId))
-          .catch(() => {
-            // A failed handler must be eligible for a later notification/recovery.
-            this.#seenJobIds.delete(jobId);
-          });
+        try {
+          await handler(jobId);
+        } catch (error) {
+          // Do not swallow claim/processing/transition failures. Allow a later
+          // notification or PostgreSQL recovery pass to retry the job.
+          this.#seenJobIds.delete(jobId);
+          throw error;
+        }
       });
       this.#subscribed = true;
     } catch (error) {
@@ -136,11 +138,13 @@ export async function republishUndispatched(
   limit = 100,
   leaseDurationMs = 30_000,
 ): Promise<number> {
-  const jobs = await store.claimOutboxBatch(limit, dispatcherId, leaseDurationMs);
+  const claim = store.claimOutboxPublicationBatch ?? store.claimOutboxBatch;
+  const mark = store.markOutboxPublished ?? store.markOutboxDispatched;
+  const jobs = await claim.call(store, limit, dispatcherId, leaseDurationMs);
   let published = 0;
   for (const job of jobs) {
     await dispatch.publish(job);
-    await store.markOutboxDispatched(job.jobId, dispatcherId, leaseDurationMs);
+    await mark.call(store, job.jobId, dispatcherId, leaseDurationMs);
     published += 1;
   }
   return published;

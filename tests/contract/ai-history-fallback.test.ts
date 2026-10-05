@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BridgeStore } from '../../src/db/store.js';
+import { FakeOperationalStore } from '../helpers/fake-operational-store.js';
 import { processChatwootOutbound } from '../../src/outbound/process-outbound.js';
 import type { TelnyxClient } from '../../src/telnyx/client.js';
 
@@ -26,7 +26,7 @@ const event = {
 
 describe('durable AI history-message fallback', () => {
   it('ignores a known AI history ID before human outbound eligibility', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const telnyx = new NoNetworkTelnyx();
     try {
       store.claimAiDecision({

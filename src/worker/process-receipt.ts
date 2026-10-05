@@ -3,7 +3,7 @@ import type { ChatwootClient } from '../chatwoot/client.js';
 import { buildPostInboundAiHook } from '../ai/process-ai.js';
 import type { AiTelnyxDispatcher, ChatwootAiHistoryWriter, OpenAiAdapter } from '../ai/types.js';
 import type { BridgeConfig } from '../config/env.js';
-import type { BridgeStore } from '../db/store.js';
+import type { OperationalStore } from '../persistence/operational-store.js';
 import { processTelnyxInbound, type InboundResult } from '../inbound/process-inbound.js';
 import type { Receipt, PostgresStore } from '../persistence/postgres-store.js';
 import { startOutboxRecoveryLoop, type RedisDispatch, type RecoveryLoop } from '../persistence/redis-dispatch.js';
@@ -15,8 +15,8 @@ export type WorkerReceiptStore = Pick<PostgresStore, 'claimReceipt' | 'completeR
 };
 
 export type ReceiptProcessorDeps = {
-  /** The existing SQLite operational store used by inbound/AI. It is deliberately not receipt state. */
-  operationalStore?: BridgeStore;
+  /** PostgreSQL operational state store; receipt lifecycle remains separate. */
+  operationalStore?: OperationalStore;
   chatwoot?: ChatwootClient;
   senderNumber?: string;
   config?: BridgeConfig;

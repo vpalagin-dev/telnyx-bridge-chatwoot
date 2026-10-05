@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BridgeStore } from '../../../src/db/store.js';
+import { FakeOperationalStore } from '../../helpers/fake-operational-store.js';
 import { FakeOpenAiAdapter } from '../../../src/ai/openai-fake.js';
 import { FakeAiTelnyxDispatcher } from '../../../src/ai/telnyx-dispatch.js';
 import { processAiPostInbound } from '../../../src/ai/process-ai.js';
@@ -17,8 +17,8 @@ class History implements ChatwootAiHistoryWriter {
 const config: BridgeConfig = {
   environment: 'test',
   server: { host: '127.0.0.1', port: 1 },
-  databasePath: ':memory:',
-  persistence: { mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
+  databaseUrl: 'postgresql://test-only',
+  persistence: { redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
   runtimeRole: 'web',
   chatwoot: { url: 'http://localhost:3001', accountId: 1, inboxId: 2, apiToken: 'test' },
   telnyx: { apiKey: 'test', senderNumber: '+15551234567' },
@@ -43,7 +43,7 @@ const config: BridgeConfig = {
   aiOutbound: { liveSmsApproved: false, recipientAllowlist: [] },
 };
 
-const stores: BridgeStore[] = [];
+const stores: FakeOperationalStore[] = [];
 afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
 function input(identity: string, inboundMessageId: number, text = 'Where is the venue?') {
@@ -60,7 +60,7 @@ function input(identity: string, inboundMessageId: number, text = 'Where is the 
 
 describe('conversational AI policy', () => {
   it('allows a new inbound after a human reply without permanently disabling AI', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const history = new History();
     const telnyx = new FakeAiTelnyxDispatcher();
@@ -80,7 +80,7 @@ describe('conversational AI policy', () => {
   });
 
   it('answers a live smoke message when no knowledge-base event is configured', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const history = new History();
     const telnyx = new FakeAiTelnyxDispatcher();
@@ -102,7 +102,7 @@ describe('conversational AI policy', () => {
   });
 
   it('treats two distinct inbound messages with identical text as separate replies', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const history = new History();
     const telnyx = new FakeAiTelnyxDispatcher();

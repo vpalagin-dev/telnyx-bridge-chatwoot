@@ -10,9 +10,7 @@ const environmentSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     HOST: z.string().min(1).default('127.0.0.1'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-    DATABASE_PATH: z.string().min(1).default('./data/bridge.sqlite'),
-    PERSISTENCE_MODE: z.enum(['sqlite', 'postgres_redis']).default('sqlite'),
-    DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
+    DATABASE_URL: z.string().url(),
     REDIS_URL: z.preprocess(blank, z.string().url().optional()),
     BRIDGE_REDIS_PREFIX: z.string().min(1).default('telnyx-bridge:'),
     RUNTIME_ROLE: z.enum(['web', 'worker']).default('web'),
@@ -61,19 +59,14 @@ const environmentSchema = z
     if ((env.NODE_ENV === 'production' || !loopbackHosts.has(env.HOST)) && !env.TELNYX_PUBLIC_KEY) {
       context.addIssue({ code: 'custom', path: ['TELNYX_PUBLIC_KEY'], message: 'required outside loopback development' });
     }
-    if (env.PERSISTENCE_MODE === 'postgres_redis') {
-      if (!env.DATABASE_URL) context.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'required for postgres_redis persistence' });
-      if (!env.REDIS_URL) context.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required for postgres_redis persistence' });
-    }
+    if (env.RUNTIME_ROLE === 'worker' && !env.REDIS_URL) context.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required for worker runtime' });
   });
 
 export type BridgeConfig = {
   environment: 'development' | 'test' | 'production';
   server: { host: string; port: number };
-  databasePath: string;
+  databaseUrl: string;
   persistence: {
-    mode: 'sqlite' | 'postgres_redis';
-    databaseUrl?: string | undefined;
     redisUrl?: string | undefined;
     redisPrefix: string;
   };
@@ -120,10 +113,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
   return {
     environment: env.NODE_ENV,
     server: { host: env.HOST, port: env.PORT },
-    databasePath: env.DATABASE_PATH,
+    databaseUrl: env.DATABASE_URL,
     persistence: {
-      mode: env.PERSISTENCE_MODE,
-      databaseUrl: env.DATABASE_URL,
       redisUrl: env.REDIS_URL,
       redisPrefix: env.BRIDGE_REDIS_PREFIX,
     },

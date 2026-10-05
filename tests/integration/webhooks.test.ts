@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import type { ChatwootClient } from '../../src/chatwoot/client.js';
-import { BridgeStore } from '../../src/db/store.js';
+import { FakeOperationalStore } from '../helpers/fake-operational-store.js';
 import type { BridgeConfig } from '../../src/config/env.js';
 import type { TelnyxClient, TelnyxSendInput } from '../../src/telnyx/client.js';
 import { HttpTelnyxClient } from '../../src/telnyx/http-client.js';
@@ -51,8 +51,8 @@ function config(publicKey: string): BridgeConfig {
   return {
     environment: 'test',
     server: { host: '127.0.0.1', port: 3000 },
-    databasePath: ':memory:',
-    persistence: { mode: 'sqlite', databaseUrl: undefined, redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
+    databaseUrl: 'postgresql://test-only',
+    persistence: { redisUrl: undefined, redisPrefix: 'telnyx-bridge:' },
     runtimeRole: 'web',
     chatwoot: {
       url: 'http://localhost:3001', accountId: 1, inboxId: 2,
@@ -67,7 +67,7 @@ function config(publicKey: string): BridgeConfig {
 describe('webhook routes', () => {
   it('accepts a signed Telnyx fixture and deduplicates repeat delivery', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const telnyx = new FakeTelnyx();
     const app = buildApp({ config: config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), store, chatwoot, telnyx });
@@ -88,7 +88,7 @@ describe('webhook routes', () => {
 
   it('persists a signed postgres_redis webhook once and acknowledges without downstream processing', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const telnyx = new FakeTelnyx();
     const receipts = new FakeReceiptAdapter();
@@ -117,7 +117,7 @@ describe('webhook routes', () => {
 
   it('accepts and deduplicates signed generic Telnyx events without downstream calls', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const telnyx = new FakeTelnyx();
     const receipts = new FakeReceiptAdapter();
@@ -156,7 +156,7 @@ describe('webhook routes', () => {
   });
 
   it('fails closed before parsing or persistence when postgres_redis lacks a Telnyx public key', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const receipts = new FakeReceiptAdapter();
     const base = config('');
     const cfg = { ...base, telnyx: { apiKey: base.telnyx.apiKey, senderNumber: base.telnyx.senderNumber }, persistence: { ...base.persistence, mode: 'postgres_redis' as const } };
@@ -174,7 +174,7 @@ describe('webhook routes', () => {
 
   it('rejects an invalid postgres_redis Telnyx signature without persistence', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const receipts = new FakeReceiptAdapter();
     const cfg = { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), persistence: { ...config(publicKey.export({ type: 'spki', format: 'pem' }).toString()).persistence, mode: 'postgres_redis' as const } };
     const app = buildApp({ config: cfg, store, chatwoot: new FakeChatwoot(), telnyx: new FakeTelnyx(), receiptAdapter: receipts });
@@ -191,7 +191,7 @@ describe('webhook routes', () => {
 
   it('accepts the base64 raw Ed25519 public key format used by Telnyx', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const spki = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
     const rawPublicKey = spki.subarray(-32).toString('base64');
@@ -212,7 +212,7 @@ describe('webhook routes', () => {
 
   it('rejects invalid Telnyx authentication before side effects', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const app = buildApp({ config: config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), store, chatwoot, telnyx: new FakeTelnyx() });
     resources.push(app, store);
@@ -228,7 +228,7 @@ describe('webhook routes', () => {
 
   it('accepts a signed Chatwoot fixture and does not submit a duplicate action twice', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     store.bindConversation(20, '+14155552671');
     const telnyx = new FakeTelnyx();
     const cfg = config(publicKey.export({ type: 'spki', format: 'pem' }).toString());
@@ -250,7 +250,7 @@ describe('webhook routes', () => {
 
   it('accepts Chatwoot signatures with the sha256 prefix used by Chatwoot', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     store.bindConversation(20, '+14155552671');
     const telnyx = new FakeTelnyx();
     const cfg = config(publicKey.export({ type: 'spki', format: 'pem' }).toString());
@@ -275,7 +275,7 @@ describe('webhook routes', () => {
 
   it('never calls the Telnyx HTTP API for Chatwoot outbound in fake mode', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     store.bindConversation(20, '+14155552671');
     const fetcher = async () => {
       throw new Error('Telnyx HTTP API must not be called in fake mode');
@@ -306,7 +306,7 @@ describe('webhook routes', () => {
 
   it('rejects a live Chatwoot outbound to a non-allowlisted recipient before Telnyx', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     store.bindConversation(20, '+14155552671');
     const telnyx = new FakeTelnyx();
     const cfg = {
@@ -331,7 +331,7 @@ describe('webhook routes', () => {
 
   it('rejects a correctly signed but stale Telnyx webhook', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const app = buildApp({ config: config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), store, chatwoot, telnyx: new FakeTelnyx() });
     resources.push(app, store);
@@ -350,7 +350,7 @@ describe('webhook routes', () => {
 
   it('acknowledges an authenticated irrelevant Telnyx event without Chatwoot side effects', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const chatwoot = new FakeChatwoot();
     const app = buildApp({ config: config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), store, chatwoot, telnyx: new FakeTelnyx() });
     resources.push(app, store);
@@ -373,7 +373,7 @@ describe('webhook routes', () => {
 
   it('returns a retry-safe service error for downstream failures instead of calling them malformed', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     store.bindConversation(20, '+14155552671');
     const telnyx = new FakeTelnyx();
     telnyx.sendSms = async (input) => { telnyx.calls.push(input); throw new Error('timeout'); };
@@ -396,7 +396,7 @@ describe('webhook routes', () => {
 
   it('rejects invalid Chatwoot authentication when a secret is configured', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     const telnyx = new FakeTelnyx();
     const app = buildApp({ config: config(publicKey.export({ type: 'spki', format: 'pem' }).toString()), store, chatwoot: new FakeChatwoot(), telnyx });
     resources.push(app, store);

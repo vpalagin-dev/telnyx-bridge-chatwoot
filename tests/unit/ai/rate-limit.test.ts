@@ -2,15 +2,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BridgeStore } from '../../../src/db/store.js';
+import { FakeOperationalStore } from '../../helpers/fake-operational-store.js';
 import { AiReplyRateLimiter } from '../../../src/ai/rate-limit.js';
 
-const stores: BridgeStore[] = [];
+const stores: FakeOperationalStore[] = [];
 afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
 describe('AiReplyRateLimiter', () => {
   it('allows the first reply and debounces a second reply for the same phone', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const limiter = new AiReplyRateLimiter(store, { debounceMs: 15_000, limit: 10, windowMs: 86_400_000 });
 
@@ -24,7 +24,7 @@ describe('AiReplyRateLimiter', () => {
   });
 
   it('allows a new reply after debounce until the rolling quota is exhausted', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const limiter = new AiReplyRateLimiter(store, { debounceMs: 15_000, limit: 2, windowMs: 86_400_000 });
 
@@ -36,15 +36,15 @@ describe('AiReplyRateLimiter', () => {
 
   it('expires old sends from the rolling window and persists records across reopen', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ai-rate-limit-'));
-    const databasePath = join(directory, 'bridge.sqlite');
-    const first = new BridgeStore(databasePath);
+    const statePath = join(directory, 'fake-state');
+    const first = new FakeOperationalStore(statePath);
     const limiter = new AiReplyRateLimiter(first, { debounceMs: 0, limit: 1, windowMs: 100 });
 
     limiter.record('+14155552671', 'ai-1', 1000);
     expect(await limiter.check('+14155552671', 1050)).toEqual({ allowed: false, reason: 'quota_exhausted' });
     first.close();
 
-    const reopened = new BridgeStore(databasePath);
+    const reopened = new FakeOperationalStore(statePath);
     const reopenedLimiter = new AiReplyRateLimiter(reopened, { debounceMs: 0, limit: 1, windowMs: 100 });
     expect(await reopenedLimiter.check('+14155552671', 1050)).toEqual({ allowed: false, reason: 'quota_exhausted' });
     expect(await reopenedLimiter.check('+14155552671', 1101)).toEqual({ allowed: true });
@@ -53,7 +53,7 @@ describe('AiReplyRateLimiter', () => {
   });
 
   it('atomically blocks a final send attempt after STOP suppression', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const limiter = new AiReplyRateLimiter(store, { debounceMs: 0, limit: 10, windowMs: 86_400_000 });
 
@@ -64,7 +64,7 @@ describe('AiReplyRateLimiter', () => {
   });
 
   it('keeps quotas independent per phone', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const limiter = new AiReplyRateLimiter(store, { debounceMs: 0, limit: 1, windowMs: 86_400_000 });
 

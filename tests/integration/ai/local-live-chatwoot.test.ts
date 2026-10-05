@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../../src/config/env.js';
 import { HttpChatwootClient } from '../../../src/chatwoot/http-client.js';
-import { BridgeStore } from '../../../src/db/store.js';
+import { FakeOperationalStore } from '../../helpers/fake-operational-store.js';
 import { processTelnyxInbound } from '../../../src/inbound/process-inbound.js';
 import { LiveOpenAiAdapter } from '../../../src/ai/openai-live.js';
 import { FakeAiTelnyxDispatcher } from '../../../src/ai/telnyx-dispatch.js';
@@ -52,7 +52,7 @@ async function readConversationMessages(config: ReturnType<typeof loadConfig>, c
 const enabled = localLiveAiChatwootEnabled(process.env) && configuredForLocalChatwoot(process.env);
 
 describe('protected local live-AI Chatwoot smoke', () => {
-  const stores: BridgeStore[] = [];
+  const stores: FakeOperationalStore[] = [];
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -81,7 +81,7 @@ describe('protected local live-AI Chatwoot smoke', () => {
   it.skipIf(!enabled)('processes one real inbound through Chatwoot, then deduplicates replay', async () => {
     const environment: NodeJS.ProcessEnv = {
       ...process.env,
-      DATABASE_PATH: ':memory:',
+      DATABASE_URL: 'postgresql://test-only',
       AI_KNOWLEDGE_ROOT: 'specs/002-jama-ai-assistant-smoke/knowledge',
       TELNYX_API_KEY: process.env.TELNYX_API_KEY ?? 'local-smoke-no-network-key',
     };
@@ -99,7 +99,7 @@ describe('protected local live-AI Chatwoot smoke', () => {
       return originalFetch(input, init);
     });
 
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const fakeTelnyx = new FakeAiTelnyxDispatcher();
     const chatwoot = new HttpChatwootClient({

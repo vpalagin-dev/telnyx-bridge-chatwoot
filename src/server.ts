@@ -3,6 +3,7 @@ import { buildRuntime } from './runtime.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
+  if (config.runtimeRole !== 'web') throw new Error('Web service requires RUNTIME_ROLE=web');
   const app = buildRuntime(config);
   await app.listen({ host: config.server.host, port: config.server.port });
 }

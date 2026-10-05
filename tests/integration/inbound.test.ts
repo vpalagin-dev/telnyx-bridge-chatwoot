@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BridgeStore } from '../../src/db/store.js';
+import { FakeOperationalStore } from '../helpers/fake-operational-store.js';
 import { processTelnyxInbound } from '../../src/inbound/process-inbound.js';
 import type { ChatwootClient, ChatwootContact, ChatwootConversation } from '../../src/chatwoot/client.js';
 
@@ -34,7 +34,7 @@ class FakeChatwoot implements ChatwootClient {
   }
 }
 
-const stores: BridgeStore[] = [];
+const stores: FakeOperationalStore[] = [];
 afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
 function fixture() {
@@ -43,7 +43,7 @@ function fixture() {
 
 describe('processTelnyxInbound', () => {
   it('maps one inbound Telnyx fixture into one Chatwoot contact, conversation, and message', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
 
@@ -71,7 +71,7 @@ describe('processTelnyxInbound', () => {
   });
 
   it('does not create a duplicate Chatwoot message for a repeated Telnyx event ID', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
 
@@ -83,7 +83,7 @@ describe('processTelnyxInbound', () => {
   });
 
   it('reopens a closed conversation before creating the incoming message', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
     chatwoot.contact = { id: 10, sourceId: 'source-10' };
@@ -96,7 +96,7 @@ describe('processTelnyxInbound', () => {
   });
 
   it('treats a stale processing claim as unknown instead of creating a message', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
     store.claimEvent('telnyx', 'evt-inbound-1');
@@ -108,7 +108,7 @@ describe('processTelnyxInbound', () => {
   });
 
   it('allows retry after a pre-message Chatwoot lookup failure', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
     let attempts = 0;
@@ -128,7 +128,7 @@ describe('processTelnyxInbound', () => {
   });
 
   it('records STOP before later outbound processing', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const chatwoot = new FakeChatwoot();
     const stop = fixture();

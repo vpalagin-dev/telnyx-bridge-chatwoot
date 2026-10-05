@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BridgeStore } from '../../src/db/store.js';
+import { FakeOperationalStore } from '../helpers/fake-operational-store.js';
 import { processChatwootOutbound } from '../../src/outbound/process-outbound.js';
 import type { TelnyxClient, TelnyxSendInput } from '../../src/telnyx/client.js';
 import { HttpTelnyxClient } from '../../src/telnyx/http-client.js';
@@ -14,7 +14,7 @@ class FakeTelnyx implements TelnyxClient {
   }
 }
 
-const stores: BridgeStore[] = [];
+const stores: FakeOperationalStore[] = [];
 afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
 function fixture() {
@@ -22,7 +22,7 @@ function fixture() {
 }
 
 function setup() {
-  const store = new BridgeStore(':memory:');
+  const store = new FakeOperationalStore(':memory:');
   stores.push(store);
   store.bindConversation(20, '+14155552671');
   return { store, telnyx: new FakeTelnyx() };
@@ -69,7 +69,7 @@ describe('processChatwootOutbound', () => {
   });
 
   it('never calls the Telnyx HTTP API in fake mode even when an HTTP client is composed', async () => {
-    const store = new BridgeStore(':memory:');
+    const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     store.bindConversation(20, '+14155552671');
     const fetcher = async () => {

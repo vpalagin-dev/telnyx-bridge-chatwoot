@@ -1,7 +1,7 @@
+import { Pool } from 'pg';
 import { buildApp } from './app.js';
 import { HttpChatwootClient } from './chatwoot/http-client.js';
 import type { BridgeConfig } from './config/env.js';
-import { BridgeStore } from './db/store.js';
 import type { TelnyxClient } from './telnyx/client.js';
 import { HttpTelnyxClient } from './telnyx/http-client.js';
 import { FakeOpenAiAdapter } from './ai/openai-fake.js';
@@ -9,6 +9,7 @@ import { LiveOpenAiAdapter } from './ai/openai-live.js';
 import { createAiTelnyxDispatcher } from './ai/telnyx-dispatch.js';
 import type { OpenAiAdapter, AiTelnyxDispatcher, ChatwootAiHistoryWriter } from './ai/types.js';
 import { PostgresStore } from './persistence/postgres-store.js';
+import { PostgresOperationalStore } from './persistence/postgres-operational-store.js';
 
 const defaults = (c: BridgeConfig): BridgeConfig => ({
   ...c,
@@ -35,7 +36,9 @@ export function createTelnyxClient(c: BridgeConfig): TelnyxClient {
 
 export type RuntimePipeline = {
   config: BridgeConfig;
-  store: BridgeStore;
+  pool: Pool;
+  operationalStore: PostgresOperationalStore;
+  receiptStore: PostgresStore;
   chatwoot: HttpChatwootClient;
   telnyx: TelnyxClient;
   openai: OpenAiAdapter;
@@ -43,14 +46,11 @@ export type RuntimePipeline = {
   aiTelnyx: AiTelnyxDispatcher;
 };
 
-/**
- * Shared operational pipeline for web and worker roles. BridgeStore remains the
- * configured persistent operational state for the existing inbound/AI pipeline;
- * PostgreSQL receipt status is owned separately by PostgresStore.
- */
 export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   const config = defaults(raw);
-  const store = new BridgeStore(config.databasePath);
+  const pool = new Pool({ connectionString: config.databaseUrl });
+  const operationalStore = new PostgresOperationalStore(config.databaseUrl, pool);
+  const receiptStore = new PostgresStore(config.databaseUrl, pool);
   const chatwoot = new HttpChatwootClient({
     baseUrl: config.chatwoot.url,
     accountId: config.chatwoot.accountId,
@@ -61,27 +61,26 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   const openai = config.ai!.enabled && config.ai!.providerMode === 'live' && config.ai!.liveOpenAiEnabled && config.ai!.openAiApiKey
     ? new LiveOpenAiAdapter({ apiKey: config.ai!.openAiApiKey, model: config.ai!.model, timeoutMs: config.ai!.timeoutMs })
     : new FakeOpenAiAdapter({ kind: 'fallback', text: config.ai!.safeFallbackText, escalate: true });
-  const aiTelnyx = createAiTelnyxDispatcher(config, telnyx, store);
-  return { config, store, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx };
+  const aiTelnyx = createAiTelnyxDispatcher(config, telnyx, operationalStore);
+  return { config, pool, operationalStore, receiptStore, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx };
 }
 
 export function buildRuntime(raw: BridgeConfig) {
   const pipeline = createRuntimePipeline(raw);
-  const postgres = pipeline.config.persistence.mode === 'postgres_redis'
-    ? new PostgresStore(pipeline.config.persistence.databaseUrl!)
-    : undefined;
   const app = buildApp({
     config: pipeline.config,
-    store: pipeline.store,
+    store: pipeline.operationalStore,
     chatwoot: pipeline.chatwoot,
     telnyx: pipeline.telnyx,
     ai: { openai: pipeline.openai, history: pipeline.history, telnyx: pipeline.aiTelnyx },
-    ...(postgres ? { receiptAdapter: postgres } : {}),
+    receiptAdapter: pipeline.receiptStore,
   });
-  if (postgres) {
-    app.addHook('onReady', async () => postgres.initialize());
-    app.addHook('onClose', async () => postgres.close());
-  }
-  app.addHook('onClose', async () => pipeline.store.close());
+  app.addHook('onReady', async () => {
+    await pipeline.receiptStore.initialize();
+    await pipeline.operationalStore.initialize();
+  });
+  app.addHook('onClose', async () => pipeline.pool.end());
   return app;
 }
+
+

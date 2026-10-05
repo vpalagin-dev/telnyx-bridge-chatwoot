@@ -25,4 +25,4 @@
 
 ## Commit
 
-Pending commit at report authoring time.
+Implementation commit: `08880af` (`feat(storage): add durable postgres webhook receipts`).

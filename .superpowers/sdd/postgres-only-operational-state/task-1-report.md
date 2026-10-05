@@ -31,6 +31,23 @@ Implemented the persistence-neutral `OperationalStore` contract and refactored t
 - `BridgeStore` remains the runtime implementation and still owns SQLite schema/lifecycle; this task intentionally does not replace it.
 - Existing workspace contains unrelated untracked Superpowers/spec artifacts; only Task 1 files are included in the commit.
 
+## Async contract fix
+
+Review identified that a strictly synchronous contract could not be implemented by PostgreSQL's async `pg` APIs. The contract now uses `Awaitable<T>` return types, and all inbound, outbound, AI, rate-limit, and Telnyx dispatch call sites await store operations. This permits the current synchronous SQLite `BridgeStore` during migration while allowing a native async PostgreSQL implementation. `ensureAiActive` returns `Awaitable<boolean>`, and unknown-decision reasons are narrowed to `chatwoot_history | telnyx_submission`.
+
+Updated tests use an async fake and await rate-limit operations while preserving duplicate-claim and suppression/debounce/quota coverage.
+
+Additional verification:
+
+- `npm exec vitest -- run tests/unit/persistence/operational-store-contract.test.ts tests/unit/ai/rate-limit.test.ts`
+  - `2` test files passed; `7` tests passed.
+- `npm run typecheck`
+  - `tsc -p tsconfig.json --noEmit` exited successfully with no diagnostics.
+
+The earlier synchronous-contract concern is superseded by this async/Awaitable fix. SQLite remains the runtime implementation; no PostgreSQL schema or SQLite deletion was introduced.
+
 ## Commit
 
-`refactor(persistence): define postgres operational store contract`
+`refactor(persistence): define postgres operational store contract` (base)
+
+Fix commit: `refactor(persistence): async operational store contract`

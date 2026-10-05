@@ -22,13 +22,13 @@ export class AiReplyRateLimiter {
     private readonly config: AiReplyLimitConfig = DEFAULT_AI_REPLY_LIMITS,
   ) {}
 
-  check(phone: string, now = Date.now()): AiReplyLimitDecision {
-    const lastReplyAt = this.store.getLastAiReplyAt(phone);
+  async check(phone: string, now = Date.now()): Promise<AiReplyLimitDecision> {
+    const lastReplyAt = await this.store.getLastAiReplyAt(phone);
     if (lastReplyAt !== null && now - lastReplyAt < this.config.debounceMs) {
       return { allowed: false, reason: 'debounced', retryAt: lastReplyAt + this.config.debounceMs };
     }
 
-    const count = this.store.countAiRepliesSince(phone, now - this.config.windowMs);
+    const count = await this.store.countAiRepliesSince(phone, now - this.config.windowMs);
     if (count >= this.config.limit) {
       return { allowed: false, reason: 'quota_exhausted' };
     }
@@ -36,11 +36,11 @@ export class AiReplyRateLimiter {
     return { allowed: true };
   }
 
-  record(phone: string, aiDecisionId: string, sentAt = Date.now()): void {
-    this.store.recordAiReply(phone, aiDecisionId, sentAt);
+  async record(phone: string, aiDecisionId: string, sentAt = Date.now()): Promise<void> {
+    await this.store.recordAiReply(phone, aiDecisionId, sentAt);
   }
 
-  claim(phone: string, aiDecisionId: string, now = Date.now()): AiReplyLimitDecision {
+  async claim(phone: string, aiDecisionId: string, now = Date.now()): Promise<AiReplyLimitDecision> {
     return this.store.claimAiReplyAttempt(
       phone,
       aiDecisionId,

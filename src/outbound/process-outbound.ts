@@ -35,7 +35,7 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
   const event = outboundEventSchema.parse(input);
   const actionId = String(event.id);
   const marker = (event as any).custom_attributes?.ai_generated;
-  if (marker === true || dependencies.store.isAiHistoryMessage(event.id)) return { outcome: 'ignored', actionId };
+  if (marker === true || await dependencies.store.isAiHistoryMessage(event.id)) return { outcome: 'ignored', actionId };
   if (marker !== undefined) return { outcome: 'unknown_needs_review', actionId };
   const hasForbiddenAutomationMarker =
     event.campaign_id != null ||
@@ -55,9 +55,9 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
 
   if (!eligible) return { outcome: 'ignored', actionId };
 
-  const phone = dependencies.store.getPhoneForConversation(event.conversation.id);
+  const phone = await dependencies.store.getPhoneForConversation(event.conversation.id);
   if (!phone) return { outcome: 'recipient_mapping_needs_review', actionId };
-  if (dependencies.store.isSuppressed(phone)) return { outcome: 'suppressed', actionId };
+  if (await dependencies.store.isSuppressed(phone)) return { outcome: 'suppressed', actionId };
   if (dependencies.outboundMode !== 'fake' && dependencies.outboundMode !== 'live') {
     throw new Error('OUTBOUND_MODE must be fake or live');
   }
@@ -65,8 +65,8 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
     return { outcome: 'recipient_not_allowlisted', actionId };
   }
 
-  if (!dependencies.store.claimOutboundAction(actionId)) {
-    const existing = dependencies.store.getOutboundAction(actionId);
+  if (!(await dependencies.store.claimOutboundAction(actionId))) {
+    const existing = await dependencies.store.getOutboundAction(actionId);
     return {
       outcome: existing?.status === 'sent' ? 'duplicate' : 'unknown_needs_review',
       actionId,
@@ -75,7 +75,7 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
 
   if (dependencies.outboundMode !== 'live') {
     const fakeMessageId = `fake-chatwoot-${actionId}`;
-    dependencies.store.completeOutboundAction(actionId, fakeMessageId);
+    await dependencies.store.completeOutboundAction(actionId, fakeMessageId);
     return { outcome: 'sent', actionId, telnyxMessageId: fakeMessageId };
   }
 
@@ -85,10 +85,10 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
       to: phone,
       text: event.content,
     });
-    dependencies.store.completeOutboundAction(actionId, response.id);
+    await dependencies.store.completeOutboundAction(actionId, response.id);
     return { outcome: 'sent', actionId, telnyxMessageId: response.id };
   } catch (error) {
-    dependencies.store.markOutboundUnknown(actionId);
+    await dependencies.store.markOutboundUnknown(actionId);
     throw error;
   }
 }

@@ -5,9 +5,11 @@ import type {
   AiOutcome,
 } from '../ai/types.js';
 
+export type Awaitable<T> = T | Promise<T>;
 export type OperationalEventProvider = 'telnyx' | 'chatwoot';
 export type OperationalEventStatus = 'processing' | 'completed' | 'unknown_needs_review';
 export type OutboundActionStatus = 'submitting' | 'sent' | 'unknown_needs_review';
+export type AiDecisionUnknownReason = 'chatwoot_history' | 'telnyx_submission';
 
 export type OutboundActionRecord = {
   status: OutboundActionStatus;
@@ -36,35 +38,35 @@ export type AiReplyAttemptResult =
   | { allowed: true }
   | { allowed: false; reason: 'suppressed' | 'debounced' | 'quota_exhausted'; retryAt?: number };
 
-/** Persistence-neutral contract for the operational state used by message pipelines. */
+/** Persistence-neutral contract; implementations may be synchronous or async during migration. */
 export interface OperationalStore {
-  claimEvent(provider: OperationalEventProvider, eventId: string): boolean;
-  getEventStatus(provider: OperationalEventProvider, eventId: string): OperationalEventStatus | null;
-  setEventStatus(provider: OperationalEventProvider, eventId: string, status: Exclude<OperationalEventStatus, 'processing'>): void;
+  claimEvent(provider: OperationalEventProvider, eventId: string): Awaitable<boolean>;
+  getEventStatus(provider: OperationalEventProvider, eventId: string): Awaitable<OperationalEventStatus | null>;
+  setEventStatus(provider: OperationalEventProvider, eventId: string, status: Exclude<OperationalEventStatus, 'processing'>): Awaitable<void>;
 
-  suppress(phone: string, sourceEventId: string): void;
-  isSuppressed(phone: string): boolean;
+  suppress(phone: string, sourceEventId: string): Awaitable<void>;
+  isSuppressed(phone: string): Awaitable<boolean>;
 
-  bindConversation(conversationId: number, phone: string): void;
-  getPhoneForConversation(conversationId: number): string | null;
+  bindConversation(conversationId: number, phone: string): Awaitable<void>;
+  getPhoneForConversation(conversationId: number): Awaitable<string | null>;
 
-  claimOutboundAction(actionId: string): boolean;
-  getOutboundAction(actionId: string): OutboundActionRecord | null;
-  completeOutboundAction(actionId: string, telnyxMessageId: string): void;
-  markOutboundUnknown(actionId: string): void;
+  claimOutboundAction(actionId: string): Awaitable<boolean>;
+  getOutboundAction(actionId: string): Awaitable<OutboundActionRecord | null>;
+  completeOutboundAction(actionId: string, telnyxMessageId: string): Awaitable<void>;
+  markOutboundUnknown(actionId: string): Awaitable<void>;
 
-  isAiHistoryMessage(messageId: number | string): boolean;
-  ensureAiActive(conversationId: number): void;
-  claimAiDecision(input: AiDecisionClaimInput): AiDecisionClaimResult;
-  getAiDecision(identityOrDecisionId: string): AiDecisionRecord | null;
-  setAiDecisionOutcome(decisionId: string, outcome: AiDecisionOutcome): void;
-  recordAiHistoryMessage(decisionId: string, messageId: number): void;
-  markAiDecisionUnknown(decisionId: string, reason: string): void;
-  recordAiTelnyxSubmission(decisionId: string, actionId: string, telnyxMessageId: string): void;
+  isAiHistoryMessage(messageId: number | string): Awaitable<boolean>;
+  ensureAiActive(conversationId: number): Awaitable<boolean>;
+  claimAiDecision(input: AiDecisionClaimInput): Awaitable<AiDecisionClaimResult>;
+  getAiDecision(identityOrDecisionId: string): Awaitable<AiDecisionRecord | null>;
+  setAiDecisionOutcome(decisionId: string, outcome: AiDecisionOutcome): Awaitable<void>;
+  recordAiHistoryMessage(decisionId: string, messageId: number): Awaitable<void>;
+  markAiDecisionUnknown(decisionId: string, reason: AiDecisionUnknownReason): Awaitable<void>;
+  recordAiTelnyxSubmission(decisionId: string, actionId: string, telnyxMessageId: string): Awaitable<void>;
 
-  countAiRepliesSince(phone: string, cutoff: number): number;
-  getLastAiReplyAt(phone: string): number | null;
-  recordAiReply(phone: string, decisionId: string, sentAt: number): void;
+  countAiRepliesSince(phone: string, cutoff: number): Awaitable<number>;
+  getLastAiReplyAt(phone: string): Awaitable<number | null>;
+  recordAiReply(phone: string, decisionId: string, sentAt: number): Awaitable<void>;
   claimAiReplyAttempt(
     phone: string,
     decisionId: string,
@@ -72,5 +74,5 @@ export interface OperationalStore {
     debounceMs: number,
     limit: number,
     windowMs: number,
-  ): AiReplyAttemptResult;
+  ): Awaitable<AiReplyAttemptResult>;
 }

@@ -40,7 +40,7 @@ export type InboundResult =
 export async function processTelnyxInbound(input: unknown, dependencies: Dependencies): Promise<InboundResult> {
   const event = inboundEventSchema.parse(input);
   const { data } = event;
-  const existingStatus = dependencies.store.getEventStatus('telnyx', data.id);
+  const existingStatus = await dependencies.store.getEventStatus('telnyx', data.id);
   if (existingStatus) {
     return {
       outcome: existingStatus === 'completed' ? 'duplicate' : 'unknown_needs_review',
@@ -49,14 +49,14 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
   }
 
   if (!data.payload.to.some((recipient) => normalizePhone(recipient.phone_number) === dependencies.senderNumber)) {
-    dependencies.store.claimEvent('telnyx', data.id);
-    dependencies.store.setEventStatus('telnyx', data.id, 'completed');
+    await dependencies.store.claimEvent('telnyx', data.id);
+    await dependencies.store.setEventStatus('telnyx', data.id, 'completed');
     return { outcome: 'ignored', telnyxEventId: data.id };
   }
 
   const phone = normalizePhone(data.payload.from.phone_number);
   if (classifyConsentCommand(data.payload.text) === 'opt_out') {
-    dependencies.store.suppress(phone, data.id);
+    await dependencies.store.suppress(phone, data.id);
   }
 
   let contact = await dependencies.chatwoot.findContactByPhone(phone);
@@ -69,14 +69,14 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
     await dependencies.chatwoot.reopenConversation(conversation.id);
   }
 
-  if (!dependencies.store.claimEvent('telnyx', data.id)) {
+  if (!(await dependencies.store.claimEvent('telnyx', data.id))) {
     return { outcome: 'duplicate', telnyxEventId: data.id };
   }
 
-  dependencies.store.bindConversation(conversation.id, phone);
+  await dependencies.store.bindConversation(conversation.id, phone);
   try {
     const message = await dependencies.chatwoot.createIncomingMessage(conversation.id, data.payload.text);
-    dependencies.store.setEventStatus('telnyx', data.id, 'completed');
+    await dependencies.store.setEventStatus('telnyx', data.id, 'completed');
     if (dependencies.postInbound) {
       try { await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch { /* AI failure is isolated from inbound ACK */ }
     }
@@ -88,7 +88,7 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
       chatwootMessageId: message.id,
     };
   } catch (error) {
-    dependencies.store.setEventStatus('telnyx', data.id, 'unknown_needs_review');
+    await dependencies.store.setEventStatus('telnyx', data.id, 'unknown_needs_review');
     throw error;
   }
 }

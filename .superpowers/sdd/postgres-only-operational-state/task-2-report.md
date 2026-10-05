@@ -10,3 +10,7 @@ Implemented `PostgresOperationalStore` with async `pg.Pool` methods for processe
 - Live PostgreSQL was not available/configured in this environment; no production credentials were used.
 
 SQLite/runtime configuration was left intact, and Redis dispatch semantics were not changed.
+
+## Task 2 review fix
+
+`setAiDecisionOutcome` now updates the decision and upserts `ai_conversation_state` from the outcome state within the same transaction, using `RETURNING conversation_id` and preserving the existing not-found error/rollback behavior. Added an env-gated integration regression covering escalation, fallback, provider-error, and validation-error propagation.

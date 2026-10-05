@@ -60,6 +60,25 @@ suite('PostgresOperationalStore (disposable TEST_DATABASE_URL only)', () => {
     expect(await store.isAiHistoryMessage(999)).toBe(true);
   });
 
+  it('propagates escalation, fallback, provider, and validation outcomes to conversation state', async () => {
+    const outcomes = [
+      { outcome: 'escalated', state: 'waiting_for_human' },
+      { outcome: 'fallback', state: 'waiting_for_human' },
+      { outcome: 'provider_error', state: 'waiting_for_human' },
+      { outcome: 'validation_error', state: 'waiting_for_human' },
+    ] as const;
+
+    for (const [index, result] of outcomes.entries()) {
+      const suffix = randomUUID();
+      const input = { inboundIdentity: `outcome-${suffix}`, conversationId: 10_000 + index, inboundMessageId: index, eventId: `event-${suffix}`, aiDecisionId: `decision-${suffix}` };
+      expect(await store.claimAiDecision(input)).toEqual({ claimed: true, decisionId: input.aiDecisionId });
+      await store.setAiDecisionOutcome(input.aiDecisionId, { ...result, status: 'completed' });
+      expect(await store.getAiDecision(input.aiDecisionId)).toMatchObject({ outcome: result.outcome, state: result.state, status: 'completed' });
+      const state = await pool.query<{ state: string }>('SELECT state FROM telnyx_bridge.ai_conversation_state WHERE conversation_id = $1', [input.conversationId]);
+      expect(state.rows[0]?.state).toBe(result.state);
+    }
+  });
+
   it('serializes rate-limit claims atomically', async () => {
     const phone = `+1666${Date.now()}`;
     const results = await Promise.all([

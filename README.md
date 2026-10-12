@@ -6,7 +6,7 @@ A separate Node.js/TypeScript service that connects Telnyx SMS webhooks to the e
 
 - No public send endpoint.
 - Chatwoot-originated outbound is accepted only through the configured signed webhook route.
-- Telnyx inbound and Chatwoot outbound actions are deduplicated in SQLite.
+- Telnyx inbound and Chatwoot outbound actions are deduplicated in PostgreSQL.
 - STOP-family commands create durable suppression; suppressed outbound never calls Telnyx.
 - Secrets are loaded from environment variables and structured logs redact secret/body/phone fields.
 - This repository does not create or modify a Chatwoot stack.

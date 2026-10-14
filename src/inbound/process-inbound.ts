@@ -36,7 +36,7 @@ export type InboundResult =
       chatwootConversationId: number;
       chatwootMessageId: number;
        aiResult?: AiProcessResult;
-       aiError?: true;
+       aiError?: { name: string; message: string };
     };
 
 export async function processTelnyxInbound(input: unknown, dependencies: Dependencies): Promise<InboundResult> {
@@ -80,9 +80,12 @@ export async function processTelnyxInbound(input: unknown, dependencies: Depende
     const message = await dependencies.chatwoot.createIncomingMessage(conversation.id, data.payload.text);
     await dependencies.store.setEventStatus('telnyx', data.id, 'completed');
     let aiResult: AiProcessResult | undefined;
-    let aiError: true | undefined;
+    let aiError: { name: string; message: string } | undefined;
     if (dependencies.postInbound) {
-      try { aiResult = await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch { aiError = true; }
+      try { aiResult = await dependencies.postInbound({ inboundIdentity: data.payload.id, telnyxEventId: data.id, telnyxMessageId: data.payload.id, conversationId: conversation.id, inboundMessageId: message.id, recipient: phone, customerMessage: data.payload.text }); } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        aiError = { name: cause.name, message: cause.message };
+      }
     }
     return {
       outcome: 'created',

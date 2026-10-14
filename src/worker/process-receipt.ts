@@ -64,7 +64,7 @@ export async function processReceipt(receipt: Receipt, deps: ReceiptProcessorDep
   try {
     const inbound = await processInbound(receipt.rawPayload, inboundDependencies);
     if (inbound.outcome === 'created' && inbound.aiError) {
-      logger.error({ component: 'ai', event: 'callback_failed', receiptId: receipt.receiptId }, 'AI callback failed after inbound creation');
+      logger.error({ component: 'ai', event: 'callback_failed', receiptId: receipt.receiptId, error: inbound.aiError }, 'AI callback failed after inbound creation');
     } else if (inbound.outcome === 'created' && inbound.aiResult) {
       logger.info({ component: 'ai', event: 'post_inbound', outcome: inbound.aiResult.outcome, state: inbound.aiResult.state }, 'AI post-inbound result');
     }

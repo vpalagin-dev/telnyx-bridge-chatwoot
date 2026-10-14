@@ -89,8 +89,8 @@ export class PostgresStore {
       await client.query('BEGIN');
       const inserted = await client.query<{ receipt_id: string }>(
         `INSERT INTO ${BRIDGE_SCHEMA}.webhook_receipts
-          (receipt_id, provider, provider_event_id, raw_payload)
-         VALUES ($1, $2, $3, $4)
+          (receipt_id, provider, provider_event_id, raw_payload, status)
+         VALUES ($1, $2, $3, $4, 'pending')
          ON CONFLICT (provider, provider_event_id) DO NOTHING
          RETURNING receipt_id`,
         [receiptId, input.provider, input.providerEventId, input.rawPayload],

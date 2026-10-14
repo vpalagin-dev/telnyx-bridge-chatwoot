@@ -94,6 +94,7 @@ CREATE INDEX IF NOT EXISTS ai_decisions_history_idx ON ${BRIDGE_SCHEMA}.ai_decis
 CREATE INDEX IF NOT EXISTS ai_reply_sends_phone_time_idx ON ${BRIDGE_SCHEMA}.ai_reply_sends (phone, sent_at);
 
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ADD COLUMN IF NOT EXISTS result_code text;
+ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ALTER COLUMN status SET DEFAULT 'pending';
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS published_at timestamptz;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS publication_claimed_by text;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS publication_claimed_at timestamptz;

@@ -7,6 +7,9 @@ import type { OperationalStore } from '../persistence/operational-store.js';
 import { processTelnyxInbound, type InboundResult } from '../inbound/process-inbound.js';
 import type { Receipt, PostgresStore } from '../persistence/postgres-store.js';
 import { startOutboxRecoveryLoop, type RedisDispatch, type RecoveryLoop } from '../persistence/redis-dispatch.js';
+import { createLogger } from '../observability/logger.js';
+
+const logger = createLogger();
 
 export type WorkerReceiptStore = Pick<PostgresStore, 'claimReceipt' | 'completeReceipt' | 'retryReceipt' | 'markReviewRequired'> & {
   getOutboxReceipt?: (jobId: string) => Promise<string | null>;
@@ -60,6 +63,11 @@ export async function processReceipt(receipt: Receipt, deps: ReceiptProcessorDep
     : ({} as Parameters<typeof processTelnyxInbound>[1]));
   try {
     const inbound = await processInbound(receipt.rawPayload, inboundDependencies);
+    if (inbound.outcome === 'created' && inbound.aiError) {
+      logger.error({ component: 'ai', event: 'callback_failed', receiptId: receipt.receiptId }, 'AI callback failed after inbound creation');
+    } else if (inbound.outcome === 'created' && inbound.aiResult) {
+      logger.info({ component: 'ai', event: 'post_inbound', outcome: inbound.aiResult.outcome, state: inbound.aiResult.state }, 'AI post-inbound result');
+    }
     if (inbound.outcome === 'unknown_needs_review') {
       return { status: 'needs_review', reason: 'inbound pipeline reported ambiguous state', inbound };
     }

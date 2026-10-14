@@ -47,6 +47,9 @@ export function buildApp(d?: AppDependencies): FastifyInstance {
       return reply.code(200).send({ accepted: true, receiptId: result.receiptId });
     } catch (e) {
       if (e instanceof ZodError) return reply.code(400).send({ error: 'invalid_payload' });
+      const name = e instanceof Error ? e.name : 'WebhookError';
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(`Telnyx webhook processing failed (${name}): ${message}\n`);
       return reply.code(503).send({ error: 'processing_failed' });
     }
   });

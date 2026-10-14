@@ -51,7 +51,7 @@ export class PostgresOperationalStore implements OperationalStore {
         `UPDATE ${BRIDGE_SCHEMA}.ai_decisions
          SET outcome=CASE WHEN status='unknown_needs_review' THEN outcome ELSE $2 END,status=CASE WHEN status='unknown_needs_review' THEN status ELSE $3 END,state=CASE WHEN status='unknown_needs_review' THEN state ELSE $4 END,updated_at=now()
          WHERE ai_decision_id=$1
-         RETURNING conversation_id`,
+         RETURNING conversation_id,state`,
         [decisionId, outcome.outcome, outcome.status, outcome.state],
       );
       if (decision.rowCount !== 1) throw new Error(`AI decision ${decisionId} not found`);

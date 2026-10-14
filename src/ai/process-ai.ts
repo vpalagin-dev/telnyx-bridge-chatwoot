@@ -100,27 +100,32 @@ export async function processAiPostInbound(
   }
 
   const validated = validateAiDecision(raw, { fallback: ai.safeFallbackText, maxChars: ai.maxOutputTokens * 4 });
-  if (validated.kind === 'error') {
-    await d.store.setAiDecisionOutcome(decisionId, { outcome: 'validation_error', status: 'completed', state: 'waiting_for_human' });
-    return { outcome: 'validation_error', aiDecisionId: decisionId, state: 'waiting_for_human' };
+  let replyText: string;
+  let isFallback = false;
+  if (validated.kind === 'error' || validated.kind === 'fallback') {
+    replyText = ai.safeFallbackText;
+    isFallback = true;
+  } else {
+    const sms = validateSingleSegment(validated.text);
+    if (sms.ok) {
+      replyText = validated.text;
+    } else {
+      replyText = ai.safeFallbackText;
+      isFallback = true;
+    }
   }
-  if (validated.kind === 'fallback') {
-    await d.store.setAiDecisionOutcome(decisionId, { outcome: 'fallback', status: 'completed', state: 'waiting_for_human' });
-    return { outcome: 'fallback', aiDecisionId: decisionId, state: 'waiting_for_human' };
-  }
-
-  const sms = validateSingleSegment(validated.text);
-  if (!sms.ok) {
+  const fallbackSms = validateSingleSegment(replyText);
+  if (!fallbackSms.ok) {
     await d.store.setAiDecisionOutcome(decisionId, { outcome: 'validation_error', status: 'completed', state: 'waiting_for_human' });
     return { outcome: 'validation_error', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 
   try {
-    const historyMessage = await d.history.createAiHistoryMessage(input.conversationId, validated.text, {
+    const historyMessage = await d.history.createAiHistoryMessage(input.conversationId, replyText, {
       ai_generated: true,
       ai_decision_id: decisionId,
-      event_id: ai.defaultEventId!,
-      outcome: 'answered',
+      event_id: ai.defaultEventId ?? eventId,
+      outcome: isFallback ? 'fallback' : 'answered',
     });
     await d.store.recordAiHistoryMessage(decisionId, historyMessage.id);
   } catch {
@@ -147,10 +152,15 @@ export async function processAiPostInbound(
     const submission = await d.telnyx.submit({
       from: config.telnyx.senderNumber,
       to: input.recipient,
-      text: validated.text,
+      text: replyText,
       aiDecisionId: decisionId,
     });
     await d.store.recordAiTelnyxSubmission(decisionId, submission.actionId, submission.telnyxMessageId);
+    if (isFallback) {
+      await d.store.setAiDecisionOutcome(decisionId, { outcome: 'fallback', status: 'completed', state: 'waiting_for_human' });
+      audit('fallback_sent', { aiDecisionId: decisionId, conversationId: input.conversationId, telnyxMessageId: submission.telnyxMessageId });
+      return { outcome: 'fallback', aiDecisionId: decisionId, state: 'waiting_for_human' };
+    }
     audit('answered', { aiDecisionId: decisionId, conversationId: input.conversationId, telnyxMessageId: submission.telnyxMessageId });
     return { outcome: 'answered', aiDecisionId: decisionId, state: 'ai_active' };
   } catch {

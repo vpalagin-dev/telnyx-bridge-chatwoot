@@ -31,7 +31,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(() => {
-  process.stderr.write('Worker startup failed; check sanitized configuration and service availability.\n');
+main().catch((error: unknown) => {
+  const name = error instanceof Error ? error.name : 'StartupError';
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`Worker startup failed (${name}): ${message}\n`);
   process.exitCode = 1;
 });

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Receipt } from '../../src/persistence/postgres-store.js';
 import { processReceipt, startWorker, type ReceiptProcessorDeps, type WorkerReceiptStore } from '../../src/worker/process-receipt.js';
+import { runWorkerRuntime } from '../../src/worker.js';
+import type { RuntimePipeline } from '../../src/runtime.js';
 
 const payload = {
   data: {
@@ -127,5 +129,31 @@ describe('runWorker', () => {
     await vi.waitFor(() => expect(handler).toBeDefined());
     await expect(handler!('receipt-1')).rejects.toThrow('durable transition failed');
     await worker.stop();
+  });
+
+  it('orders runtime initialization, awaited sync, worker run, and shutdown', async () => {
+    const events: string[] = [];
+    const pipeline = {
+      config: { ai: { knowledgeSource: 'chatwoot' }, telnyx: { senderNumber: '+15551234567' } },
+      receiptStore: { initialize: vi.fn(async () => events.push('receipt:init')) },
+      operationalStore: { initialize: vi.fn(async () => events.push('operational:init')) },
+      knowledgeStore: { initialize: vi.fn(async () => events.push('knowledge:init')) },
+      knowledgeSync: { start: vi.fn(() => ({ ready: Promise.resolve().then(() => events.push('sync:ready')), stop: vi.fn(async () => events.push('sync:stop')) })) },
+      knowledgeProvider: {}, chatwoot: {}, openai: {}, history: {}, aiTelnyx: {}, pool: { end: vi.fn(async () => events.push('pool:end')) },
+    } as never;
+    const redis = { consume: vi.fn(), close: vi.fn(async () => { events.push('redis:close'); }) };
+    await runWorkerRuntime(pipeline, redis, async (_options, deps: any) => { events.push('worker:run'); expect(deps.processor.knowledge).toBe((pipeline as any).knowledgeProvider); });
+    expect(events).toEqual(['receipt:init', 'operational:init', 'knowledge:init', 'sync:ready', 'worker:run', 'sync:stop', 'redis:close', 'pool:end']);
+  });
+
+  it('continues when initial Chatwoot sync fails and skips sync in local mode', async () => {
+    const run = vi.fn(async () => undefined);
+    const base = { config: { ai: { knowledgeSource: 'chatwoot' }, telnyx: { senderNumber: '+15551234567' } }, receiptStore: { initialize: vi.fn(async () => undefined) }, operationalStore: { initialize: vi.fn(async () => undefined) }, knowledgeStore: { initialize: vi.fn(async () => undefined) }, knowledgeProvider: {}, chatwoot: {}, openai: {}, history: {}, aiTelnyx: {}, pool: { end: vi.fn(async () => undefined) } };
+    const sync = { start: vi.fn(() => { throw new Error('unavailable'); }) };
+    await runWorkerRuntime({ ...base, knowledgeSync: sync } as never, { consume: vi.fn(), close: vi.fn(async () => undefined) }, run);
+    expect(run).toHaveBeenCalled();
+    const localSync = { start: vi.fn() };
+    await runWorkerRuntime({ ...base, config: { ...base.config, ai: { knowledgeSource: 'local' } }, knowledgeSync: localSync } as never, { consume: vi.fn(), close: vi.fn(async () => undefined) }, run);
+    expect(localSync.start).not.toHaveBeenCalled();
   });
 });

@@ -6,9 +6,11 @@ import {
 } from './chatwoot-knowledge.js';
 import type { KnowledgeStore } from '../persistence/knowledge-store.js';
 
+export type KnowledgeSyncHandle = { stop(): Promise<void>; ready: Promise<void> };
+
 export type KnowledgeSyncService = {
   syncOnce(): Promise<{ activated: boolean; articleCount: number; contentHash: string }>;
-  start(): { stop(): Promise<void> };
+  start(): KnowledgeSyncHandle;
 };
 
 type Logger = {
@@ -54,7 +56,7 @@ export function createKnowledgeSyncService(options: {
   let started = false;
   let timer: Timer | undefined;
   let running: Promise<void> | undefined;
-  let handle: { stop(): Promise<void> } | undefined;
+  let handle: KnowledgeSyncHandle | undefined;
 
   async function syncOnce(): Promise<{ activated: boolean; articleCount: number; contentHash: string }> {
     const articles = await options.client.listPublishedArticles();
@@ -102,11 +104,11 @@ export function createKnowledgeSyncService(options: {
 
   return {
     syncOnce,
-    start(): { stop(): Promise<void> } {
+    start(): KnowledgeSyncHandle {
       if (handle !== undefined) return handle;
       started = true;
-      handle = { stop };
-      void runAttempt();
+      const ready = runAttempt();
+      handle = { stop, ready };
       return handle;
     },
   };

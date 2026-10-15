@@ -10,6 +10,11 @@ import { createAiTelnyxDispatcher } from './ai/telnyx-dispatch.js';
 import type { OpenAiAdapter, AiTelnyxDispatcher, ChatwootAiHistoryWriter } from './ai/types.js';
 import { PostgresStore } from './persistence/postgres-store.js';
 import { PostgresOperationalStore } from './persistence/postgres-operational-store.js';
+import { PostgresKnowledgeStore } from './persistence/postgres-knowledge-store.js';
+import type { KnowledgeStore } from './persistence/knowledge-store.js';
+import { createChatwootHelpCenterClient, type ChatwootHelpCenterClient } from './ai/chatwoot-knowledge.js';
+import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-provider.js';
+import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
 
 const defaults = (c: BridgeConfig): BridgeConfig => ({
   ...c,
@@ -44,6 +49,9 @@ export type RuntimePipeline = {
   openai: OpenAiAdapter;
   history: ChatwootAiHistoryWriter;
   aiTelnyx: AiTelnyxDispatcher;
+  knowledgeStore: KnowledgeStore;
+  knowledgeProvider: KnowledgeProvider;
+  knowledgeSync: KnowledgeSyncService;
 };
 
 export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
@@ -62,7 +70,31 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     ? new LiveOpenAiAdapter({ apiKey: config.ai!.openAiApiKey, model: config.ai!.model, timeoutMs: config.ai!.timeoutMs })
     : new FakeOpenAiAdapter({ kind: 'fallback', text: config.ai!.safeFallbackText, escalate: true });
   const aiTelnyx = createAiTelnyxDispatcher(config, telnyx, operationalStore);
-  return { config, pool, operationalStore, receiptStore, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx };
+  const knowledgeSource = config.ai?.knowledgeSource ?? 'local';
+  const profileId = config.ai?.helpCenterSlug ?? 'jama-help-center';
+  const knowledgeStore = new PostgresKnowledgeStore(config.databaseUrl, pool);
+  const knowledgeClient: ChatwootHelpCenterClient = knowledgeSource === 'chatwoot'
+    ? createChatwootHelpCenterClient({
+      baseUrl: config.chatwoot.url,
+      accountId: config.chatwoot.accountId,
+      apiToken: config.chatwoot.apiToken,
+      portalSlug: config.ai?.helpCenterSlug ?? 'jama-help-center',
+      locale: config.ai?.helpCenterLocale ?? 'en',
+    })
+    : { listPublishedArticles: async () => [] };
+  const knowledgeProvider = createKnowledgeProvider({
+    source: knowledgeSource,
+    profileId,
+    localRoot: config.ai?.knowledgeRoot ?? 'specs/002-jama-ai-assistant-smoke/knowledge',
+    store: knowledgeStore,
+  });
+  const knowledgeSync = createKnowledgeSyncService({
+    client: knowledgeClient,
+    store: knowledgeStore,
+    profileId,
+    intervalMs: config.ai?.knowledgeSyncIntervalMs ?? 300000,
+  });
+  return { config, pool, operationalStore, receiptStore, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx, knowledgeStore, knowledgeProvider, knowledgeSync };
 }
 
 export function buildRuntime(raw: BridgeConfig) {
@@ -78,6 +110,7 @@ export function buildRuntime(raw: BridgeConfig) {
   app.addHook('onReady', async () => {
     await pipeline.receiptStore.initialize();
     await pipeline.operationalStore.initialize();
+    await pipeline.knowledgeStore.initialize();
   });
   app.addHook('onClose', async () => pipeline.pool.end());
   return app;

@@ -4,6 +4,7 @@ import { buildPostInboundAiHook } from '../ai/process-ai.js';
 import type { AiTelnyxDispatcher, ChatwootAiHistoryWriter, OpenAiAdapter } from '../ai/types.js';
 import type { BridgeConfig } from '../config/env.js';
 import type { OperationalStore } from '../persistence/operational-store.js';
+import type { KnowledgeProvider } from '../ai/knowledge-provider.js';
 import { processTelnyxInbound, type InboundResult } from '../inbound/process-inbound.js';
 import type { Receipt, PostgresStore } from '../persistence/postgres-store.js';
 import { startOutboxRecoveryLoop, type RedisDispatch, type RecoveryLoop } from '../persistence/redis-dispatch.js';
@@ -30,6 +31,7 @@ export type ReceiptProcessorDeps = {
   openai?: OpenAiAdapter;
   history?: ChatwootAiHistoryWriter;
   telnyx?: AiTelnyxDispatcher;
+  knowledge?: KnowledgeProvider;
   processInbound?: typeof processTelnyxInbound;
   inboundDependencies?: Parameters<typeof processTelnyxInbound>[1];
 };
@@ -97,7 +99,7 @@ function buildInboundDependencies(deps: ReceiptProcessorDeps): Parameters<typeof
     senderNumber: deps.senderNumber,
   };
   if (deps.config && deps.openai && deps.history && deps.telnyx) {
-    result.postInbound = buildPostInboundAiHook({ config: deps.config, store: deps.operationalStore, openai: deps.openai, history: deps.history, telnyx: deps.telnyx });
+    result.postInbound = buildPostInboundAiHook({ config: deps.config, store: deps.operationalStore, openai: deps.openai, history: deps.history, telnyx: deps.telnyx, ...(deps.knowledge ? { knowledge: deps.knowledge } : {}) });
   }
   return result;
 }

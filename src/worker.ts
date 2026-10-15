@@ -25,7 +25,16 @@ export async function runWorkerRuntime(
         syncHandle = pipeline.knowledgeSync.start();
         await syncHandle.ready;
       } catch (error) {
-        logger.error({ component: 'knowledge', event: 'initial_sync_failed', error }, 'initial knowledge sync failed; continuing with fallback');
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+          ? (error as { code: string }).code
+          : undefined;
+        logger.error({
+          component: 'knowledge',
+          event: 'initial_sync_failed',
+          errorName,
+          ...(errorCode ? { errorCode } : {}),
+        }, 'initial knowledge sync failed; continuing with fallback');
       }
     }
 

@@ -12,7 +12,8 @@ type KnowledgeMetadata = Record<string, string>;
 type KnowledgeBlock = { heading: string; level: number; lines: string[] };
 
 function parseFrontmatter(text: string): { metadata: KnowledgeMetadata; body: string } {
-  const match = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
+  const normalized = text.replace(/^\uFEFF/, '');
+  const match = normalized.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
   if (!match?.[1] || match[2] === undefined) throw new Error('invalid_knowledge_frontmatter');
   const metadata: KnowledgeMetadata = {};
   for (const line of match[1].split(/\r?\n/)) {

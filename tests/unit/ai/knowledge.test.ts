@@ -11,6 +11,16 @@ afterEach(async () => {
 });
 
 describe('single-file knowledge base', () => {
+  it('accepts a UTF-8 BOM before frontmatter', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'jama-knowledge-bom-'));
+    directories.push(root);
+    await writeFile(join(root, 'knowledge-base.md'), `\uFEFF---\nknowledge_id: bom-base\nstatus: draft\n---\n\n## 1.1 Confirmed\nStatus: CONFIRMED\nApproved.\n`, 'utf8');
+
+    const result = await loadApprovedKnowledge(root, 'bom-base');
+
+    expect(result.eventMarkdown).toContain('Approved.');
+  });
+
   it('returns only explicitly confirmed sections and excludes draft content', async () => {
     const root = await mkdtemp(join(tmpdir(), 'jama-knowledge-'));
     directories.push(root);

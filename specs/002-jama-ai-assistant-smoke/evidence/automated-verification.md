@@ -20,3 +20,13 @@
 - AI history uses `custom_attributes.ai_generated=true`; marked Chatwoot events are ignored before human recipient lookup and malformed markers fail closed.
 - AI records contain identifiers/status/outcome/state only; transient customer text and model output are not stored.
 - The dependency installation environment rejected the network fetch for `yaml@2.8.1`; the checked-in loader uses a confined exact-frontmatter parser and should be switched to the package parser when dependency installation is available.
+
+## Chatwoot Help Center knowledge source boundary
+
+- Production selector: `AI_KNOWLEDGE_SOURCE=chatwoot`.
+- Editorial source: published articles from the configured Chatwoot Help Center portal (`CHATWOOT_HELP_CENTER_SLUG=jama-help-center`, locale `en`). Draft and archived articles are excluded before activation.
+- PostgreSQL stores the active versioned knowledge snapshot; a failed or incomplete sync does not replace the previous active snapshot.
+- The worker initializes the knowledge schema, awaits the initial sync attempt before starting receipt processing, retries on the configured interval, and stops sync before Redis/PostgreSQL shutdown.
+- `processReceipt` passes the source-neutral knowledge provider into the AI hook. Local Markdown remains a fallback only when no active Chatwoot snapshot exists.
+- Runtime verification: `npm run typecheck` passed; `npm test` passed with 168 tests and 31 environment-gated skips; `npm run build` passed. PostgreSQL integration suites remain skipped when `TEST_DATABASE_URL` is unavailable.
+- No live Chatwoot, OpenAI, Telnyx, or Railway deployment operation was performed by automated verification.

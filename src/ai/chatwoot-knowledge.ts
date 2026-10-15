@@ -98,8 +98,7 @@ function parsePage(body: unknown): Page {
     throw new Error('chatwoot_knowledge_incomplete_page');
   }
   if (articlesCount !== undefined && payload.length > articlesCount) throw new Error('chatwoot_knowledge_incomplete_page');
-  if (payload.length === 0 && articlesCount !== undefined && articlesCount > 0) throw new Error('chatwoot_knowledge_incomplete_page');
-  if (payload.length === 0 && articlesCount === undefined && publishedCount === 0) throw new Error('chatwoot_knowledge_incomplete_page');
+  if (payload.length === 0 && (articlesCount !== 0 || publishedCount !== 0)) throw new Error('chatwoot_knowledge_incomplete_page');
   const page: Page = { payload, currentPage: meta.current_page };
   if (totalPages !== undefined) page.totalPages = totalPages;
   if (articlesCount !== undefined) page.articlesCount = articlesCount;

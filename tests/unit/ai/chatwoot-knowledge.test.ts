@@ -67,8 +67,11 @@ describe('Chatwoot Help Center knowledge client', () => {
       { body: { payload: [{ ...apiArticle(), title: '   ' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), status: '' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), position: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 1, articles_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
       { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
       { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 1, articles_count: 0, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
       { body: { payload: [apiArticle()], meta: { current_page: 1, total_pages: 1, articles_count: 2, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
     ];
     for (const testCase of cases) {

@@ -74,3 +74,13 @@ Fix-round 2 verification:
 - `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts`: 7 passed.
 - `npm run typecheck`: exited 0.
 - TDD red evidence: round 2 regression tests initially failed 2 cases before the production changes; after the fixes they passed.
+
+## Fix round 3 (empty-result completeness)
+
+- Empty payloads now require both explicit numeric `articles_count === 0` and `published_count === 0`; missing, nonzero, or conflicting counts fail closed, including metadata with only `current_page`/`total_pages` or only one zero count.
+- Added regression cases for missing counts, `articles_count: 0` without `published_count`, nonzero/conflicting counts, and retained the valid explicitly proven empty dataset case.
+
+Fix-round 3 verification:
+
+- `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts`: 7 passed.
+- `npm run typecheck`: exited 0.

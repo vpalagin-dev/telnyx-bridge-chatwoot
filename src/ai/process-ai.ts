@@ -99,22 +99,16 @@ export async function processAiPostInbound(
     return { outcome: 'provider_error', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 
-  const validated = validateAiDecision(raw, { fallback: ai.safeFallbackText, maxChars: ai.maxOutputTokens * 4 });
+  const validated = validateAiDecision(raw, { fallback: ai.safeFallbackText });
   let replyText: string;
   let isFallback = false;
   if (validated.kind === 'error' || validated.kind === 'fallback') {
     replyText = ai.safeFallbackText;
     isFallback = true;
   } else {
-    const sms = validateSingleSegment(validated.text);
-    if (sms.ok) {
-      replyText = validated.text;
-    } else {
-      replyText = ai.safeFallbackText;
-      isFallback = true;
-    }
+    replyText = validated.text;
   }
-  const fallbackSms = validateSingleSegment(replyText);
+  const fallbackSms = isFallback ? validateSingleSegment(replyText) : { ok: true as const };
   if (!fallbackSms.ok) {
     await d.store.setAiDecisionOutcome(decisionId, { outcome: 'validation_error', status: 'completed', state: 'waiting_for_human' });
     return { outcome: 'validation_error', aiDecisionId: decisionId, state: 'waiting_for_human' };

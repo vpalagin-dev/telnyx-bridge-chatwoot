@@ -43,6 +43,34 @@ describe('AI fallback SMS', () => {
   const stores: FakeOperationalStore[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
+  it('sends a supported long answer instead of falling back only because it exceeds one segment', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const history = new History();
+    const longAnswer = 'JAMA! ' + 'This confirmed answer is intentionally longer than one SMS segment. '.repeat(4);
+
+    const result = await processAiPostInbound({
+      inboundIdentity: 'long-answer-1',
+      telnyxEventId: 'long-event-1',
+      telnyxMessageId: 'long-answer-1',
+      conversationId: 20,
+      inboundMessageId: 30,
+      recipient: '+14155552671',
+      customerMessage: 'Tell me about JAMA.',
+    }, {
+      config,
+      store,
+      openai: new FakeOpenAiAdapter({ kind: 'answer', text: longAnswer }),
+      history,
+      telnyx,
+    });
+
+    expect(result).toMatchObject({ outcome: 'answered', state: 'ai_active' });
+    expect(telnyx.calls).toHaveLength(1);
+    expect(telnyx.calls[0]?.text).toBe(longAnswer.trim());
+  });
+
   it('sends one safe fallback SMS when the AI answer fails validation', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);

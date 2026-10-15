@@ -100,6 +100,38 @@ describe('conversational AI policy', () => {
     expect(telnyx.calls).toHaveLength(1);
   });
 
+  it('uses the injected source-neutral knowledge provider for approved context', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    let approvedContext = '';
+    const openai = {
+      async generate(request: { approvedContext: string }) {
+        approvedContext = request.approvedContext;
+        return { kind: 'answer' as const, text: 'The answer is approved.' };
+      },
+    };
+    const deps = {
+      config: { ...config, ai: { ...config.ai!, defaultEventId: 'jama-ama-v1.3' } },
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge: { load: async () => ({
+        eventId: 'jama-ama-v1.3',
+        event: { status: 'active', effective_from: '', review_by: '' },
+        eventMarkdown: 'Chatwoot snapshot answer',
+        sharedMarkdown: 'Shared answer',
+      }) },
+    };
+
+    const result = await processAiPostInbound(input('inbound-provider', 34), deps);
+
+    expect(result.outcome).toBe('answered');
+    expect(approvedContext).toBe('Chatwoot snapshot answer\nShared answer');
+  });
+
   it('treats two distinct inbound messages with identical text as separate replies', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);

@@ -34,6 +34,10 @@ const environmentSchema = z
     OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(2048).default(256),
     OPENAI_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
     AI_DEFAULT_EVENT_ID: z.preprocess(blank, z.string().min(1).optional()),
+     AI_KNOWLEDGE_SOURCE: z.enum(['local', 'chatwoot']).default('local'),
+     CHATWOOT_HELP_CENTER_SLUG: z.string().default('jama-help-center'),
+     CHATWOOT_HELP_CENTER_LOCALE: z.string().min(1).default('en'),
+     AI_KNOWLEDGE_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     AI_KNOWLEDGE_ROOT: z.string().min(1).default('specs/002-jama-ai-assistant-smoke/knowledge'),
     AI_SAFE_FALLBACK_TEXT: z.string().min(1).default("I'm not sure about that. Let me get someone from the JAMA team to help you."),
     AI_ESCALATION_ENABLED: bool(true),
@@ -60,6 +64,9 @@ const environmentSchema = z
       context.addIssue({ code: 'custom', path: ['TELNYX_PUBLIC_KEY'], message: 'required outside loopback development' });
     }
     if (env.RUNTIME_ROLE === 'worker' && !env.REDIS_URL) context.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'required for worker runtime' });
+     if (env.AI_KNOWLEDGE_SOURCE === 'chatwoot' && !env.CHATWOOT_HELP_CENTER_SLUG.trim()) {
+       context.addIssue({ code: 'custom', path: ['CHATWOOT_HELP_CENTER_SLUG'], message: 'required for Chatwoot knowledge source' });
+     }
   });
 
 export type BridgeConfig = {
@@ -85,6 +92,10 @@ export type BridgeConfig = {
     maxOutputTokens: number;
     timeoutMs: number;
     defaultEventId?: string;
+    knowledgeSource?: 'local' | 'chatwoot';
+    helpCenterSlug?: string;
+    helpCenterLocale?: string;
+    knowledgeSyncIntervalMs?: number;
     knowledgeRoot: string;
     safeFallbackText: string;
     escalationEnabled: boolean;
@@ -146,7 +157,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       maxOutputTokens: env.OPENAI_MAX_OUTPUT_TOKENS,
       timeoutMs: env.OPENAI_TIMEOUT_MS,
       ...(env.AI_DEFAULT_EVENT_ID ? { defaultEventId: env.AI_DEFAULT_EVENT_ID } : {}),
-      knowledgeRoot: env.AI_KNOWLEDGE_ROOT,
+      knowledgeSource: env.AI_KNOWLEDGE_SOURCE,
+       helpCenterSlug: env.CHATWOOT_HELP_CENTER_SLUG,
+       helpCenterLocale: env.CHATWOOT_HELP_CENTER_LOCALE,
+       knowledgeSyncIntervalMs: env.AI_KNOWLEDGE_SYNC_INTERVAL_MS,
+       knowledgeRoot: env.AI_KNOWLEDGE_ROOT,
       safeFallbackText: env.AI_SAFE_FALLBACK_TEXT,
       escalationEnabled: env.AI_ESCALATION_ENABLED,
       debounceMs: env.AI_DEBOUNCE_MS,

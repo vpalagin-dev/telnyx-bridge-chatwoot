@@ -26,7 +26,36 @@ describe('loadConfig', () => {
     expect(config.persistence).toEqual({ redisUrl: undefined, redisPrefix: 'telnyx-bridge:' });
     expect(config.runtimeRole).toBe('web');
     expect(config.outbound).toEqual({ mode: 'fake' });
-    expect(config.ai).toMatchObject({ debounceMs: 15000, replyLimit: 10, replyLimitWindowMs: 86400000 });
+    expect(config.ai).toMatchObject({
+      debounceMs: 15000,
+      replyLimit: 10,
+      replyLimitWindowMs: 86400000,
+      knowledgeSource: 'local',
+      helpCenterSlug: 'jama-help-center',
+      helpCenterLocale: 'en',
+      knowledgeSyncIntervalMs: 300000,
+    });
+  });
+
+  it('loads Chatwoot knowledge source settings and overrides', () => {
+    const config = loadConfig({
+      ...validEnvironment,
+      AI_KNOWLEDGE_SOURCE: 'chatwoot',
+      CHATWOOT_HELP_CENTER_SLUG: 'custom-help',
+      CHATWOOT_HELP_CENTER_LOCALE: 'fr',
+      AI_KNOWLEDGE_SYNC_INTERVAL_MS: '120000',
+    });
+
+    expect(config.ai).toMatchObject({
+      knowledgeSource: 'chatwoot',
+      helpCenterSlug: 'custom-help',
+      helpCenterLocale: 'fr',
+      knowledgeSyncIntervalMs: 120000,
+    });
+  });
+
+  it('requires a non-empty Chatwoot help center slug in Chatwoot knowledge mode', () => {
+    expect(() => loadConfig({ ...validEnvironment, AI_KNOWLEDGE_SOURCE: 'chatwoot', CHATWOOT_HELP_CENTER_SLUG: '  ' })).toThrowError(/CHATWOOT_HELP_CENTER_SLUG/);
   });
 
   it('loads PostgreSQL and worker Redis settings', () => {

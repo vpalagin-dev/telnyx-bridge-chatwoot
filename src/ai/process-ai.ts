@@ -1,7 +1,7 @@
 import type { BridgeConfig } from '../config/env.js';
 import type { OperationalStore } from '../persistence/operational-store.js';
 import type { ChatwootAiHistoryWriter, OpenAiAdapter, AiTelnyxDispatcher, PostInboundAiInput, AiProcessResult } from './types.js';
-import { selectDefaultEvent, loadApprovedKnowledge } from './knowledge.js';
+import type { KnowledgeProvider } from './knowledge-provider.js';
 import { validateAiDecision } from './response-validation.js';
 import { classifyEscalation } from './escalation.js';
 import { validateSingleSegment } from './sms-validation.js';
@@ -19,12 +19,13 @@ export async function processAiPostInbound(
     openai: OpenAiAdapter;
     history: ChatwootAiHistoryWriter;
     telnyx: AiTelnyxDispatcher;
+     knowledge?: KnowledgeProvider;
   },
 ): Promise<AiProcessResult> {
   const config = d.config;
   const ai = config.ai!;
   const decisionId = `ai-${input.inboundIdentity}`;
-  const eventId = ai.defaultEventId ?? 'no-knowledge-base';
+  const eventId = ai.defaultEventId ?? 'jama-ama-v1.3';
   const existing = await d.store.getAiDecision(input.inboundIdentity);
 
   if (existing) {
@@ -62,13 +63,9 @@ export async function processAiPostInbound(
   }
 
   let knowledge: { eventMarkdown: string; sharedMarkdown: string } = { eventMarkdown: '', sharedMarkdown: '' };
-  if (ai.defaultEventId) {
+  if (d.knowledge && (ai.defaultEventId || ai.knowledgeSource === 'chatwoot')) {
     try {
-      knowledge = await selectDefaultEvent(
-        ai.defaultEventId,
-        (root, selectedEventId, notice) => loadApprovedKnowledge(root, selectedEventId, notice),
-        ai.knowledgeRoot,
-      );
+      knowledge = await d.knowledge.load(eventId);
     } catch {
       await d.store.setAiDecisionOutcome(decisionId, { outcome: 'escalated', status: 'completed', state: 'waiting_for_human' });
       return { outcome: 'escalated', aiDecisionId: decisionId, state: 'waiting_for_human' };

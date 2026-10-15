@@ -41,11 +41,11 @@ describe('Chatwoot Help Center knowledge client', () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
         payload: [apiArticle(), apiArticle({ id: 2, slug: 'draft', title: 'Private draft', content: 'Do not use', status: 'draft', updatedAt: 1792090616, position: 20 })],
-        meta: { current_page: 1, total_pages: 2, articles_count: 2, published_count: 1 },
+        meta: { current_page: 1, total_pages: 2, articles_count: 3, published_count: 2 },
       }))
       .mockResolvedValueOnce(response({
         payload: [apiArticle({ id: 3, slug: 'second', title: 'Second?', updatedAt: '2026-10-15T00:00:00Z', position: 30 })],
-        meta: { current_page: 2, total_pages: 2, articles_count: 2, published_count: 2 },
+        meta: { current_page: 2, total_pages: 2, articles_count: 3, published_count: 2 },
       }));
     const client = createChatwootHelpCenterClient({
       baseUrl: 'http://localhost:3001/', accountId: 6, apiToken: 'token', portalSlug: 'jama-help-center', locale: 'en', fetcher,
@@ -68,13 +68,40 @@ describe('Chatwoot Help Center knowledge client', () => {
       { body: { payload: [{ ...apiArticle(), status: '' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), position: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 2, published_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [apiArticle()], meta: { current_page: 1, total_pages: 1, articles_count: 2, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
     ];
     for (const testCase of cases) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(testCase.body, testCase.status ?? 200));
       const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
       await expect(client.listPublishedArticles()).rejects.toThrow(testCase.error);
     }
+  });
+
+  it('continues from a draft-only page to collect later published articles', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        payload: [apiArticle({ id: 10, status: 'draft', content: 'Draft' })],
+        meta: { current_page: 1, articles_count: 2, published_count: 1 },
+      }))
+      .mockResolvedValueOnce(response({
+        payload: [apiArticle({ id: 11, slug: 'published-later' })],
+        meta: { current_page: 2, articles_count: 2, published_count: 1 },
+      }));
+    const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
+
+    await expect(client.listPublishedArticles()).resolves.toEqual([article({ id: 11, slug: 'published-later' })]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts an explicitly proven empty dataset', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({
+      payload: [],
+      meta: { current_page: 1, total_pages: 1, articles_count: 0, published_count: 0 },
+    }));
+    const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
+
+    await expect(client.listPublishedArticles()).resolves.toEqual([]);
   });
 
   it('preserves whitespace exactly when content has no known wrapper', () => {

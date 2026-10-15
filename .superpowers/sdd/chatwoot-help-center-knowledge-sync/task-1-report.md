@@ -59,3 +59,18 @@ Fix-round verification:
 - `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts`: 5 passed.
 - `npm run typecheck`: exited 0.
 - TDD red evidence: the new regression tests initially failed 2 cases before production changes; after the fixes they passed.
+
+## Fix round 2 (re-review findings)
+
+Addressed the second review round in `src/ai/chatwoot-knowledge.ts` and `tests/unit/ai/chatwoot-knowledge.test.ts`:
+
+- Removed unsafe completion inference from `publishedOnPage`; a draft-only first page now continues when aggregate raw counts require another page, and fails closed when continuation cannot be proven.
+- Accumulate raw and published article counts across all fetched pages. When declared, `articles_count` and `published_count` must remain consistent across pages and exactly match the final aggregates.
+- Reject declared totals larger than accumulated payload, mismatched empty single-page responses, and empty results without explicit `articles_count: 0` plus `published_count: 0` proof.
+- Added coverage for draft-only first page followed by a published page, aggregate count underflow, conflicting empty single-page metadata, and explicitly proven empty datasets.
+
+Fix-round 2 verification:
+
+- `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts`: 7 passed.
+- `npm run typecheck`: exited 0.
+- TDD red evidence: round 2 regression tests initially failed 2 cases before the production changes; after the fixes they passed.

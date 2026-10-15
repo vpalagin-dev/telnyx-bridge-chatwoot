@@ -1,9 +1,9 @@
-import type { ApprovedKnowledge, KnowledgeLoader, } from './knowledge.js';
+import type { ApprovedKnowledge, KnowledgeLoader } from './knowledge.js';
 import { loadApprovedKnowledge } from './knowledge.js';
 import type { KnowledgeStore } from '../persistence/knowledge-store.js';
 
 export type KnowledgeProvider = {
-  load(profileId: string): Promise<ApprovedKnowledge>;
+  load(eventId: string): Promise<ApprovedKnowledge>;
 };
 
 export function createKnowledgeProvider(options: {
@@ -18,7 +18,7 @@ export function createKnowledgeProvider(options: {
     async load(eventId: string): Promise<ApprovedKnowledge> {
       if (options.source === 'local') return localLoader(options.localRoot, eventId);
       const active = options.store ? await options.store.getActiveKnowledge(options.profileId) : null;
-      if (!active) return localLoader(options.localRoot, eventId);
+      if (!active || active.snapshot.source !== 'chatwoot') return localLoader(options.localRoot, eventId);
       const documents = [...active.documents].sort((left, right) => left.position - right.position || left.sourceArticleId - right.sourceArticleId);
       return {
         eventId,

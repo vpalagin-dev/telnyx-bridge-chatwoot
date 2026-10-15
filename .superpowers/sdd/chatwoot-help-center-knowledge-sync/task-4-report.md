@@ -24,3 +24,10 @@ Focused tests were run red before implementation:
 ## Concerns
 - Runtime construction currently exposes the provider injection boundary but does not instantiate a Chatwoot `KnowledgeStore` provider itself; the worker/runtime integration can supply the provider when the PostgreSQL knowledge store is wired.
 - `BridgeConfig.ai` knowledge settings are optional at the type level to preserve existing hand-built test/runtime fixtures; `loadConfig` always supplies the configured defaults.
+
+## Fix Round 1
+- Corrected the public `KnowledgeProvider.load(eventId)` contract; `options.profileId` remains the snapshot lookup key.
+- Added a source guard so Chatwoot mode consumes only active snapshots whose source is `chatwoot`; active local snapshots use the local loader.
+- Replaced the placeholder provider test with real process-ai coverage: Chatwoot mode without `defaultEventId` loads `jama-ama-v1.3` and passes approved context; local mode without `defaultEventId` retains `no-knowledge-base` request semantics and does not invoke the provider.
+- Fix-round focused verification: `npx vitest run tests/unit/ai/knowledge-provider.test.ts tests/integration/ai/conversation-policy.test.ts tests/unit/config.test.ts tests/unit/ai/knowledge.test.ts` — **28 passed**.
+- `npm run typecheck` — **passed**.

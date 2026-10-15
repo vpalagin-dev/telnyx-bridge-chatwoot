@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeOperationalStore } from '../../helpers/fake-operational-store.js';
 import { FakeOpenAiAdapter } from '../../../src/ai/openai-fake.js';
 import { FakeAiTelnyxDispatcher } from '../../../src/ai/telnyx-dispatch.js';
@@ -112,24 +112,58 @@ describe('conversational AI policy', () => {
         return { kind: 'answer' as const, text: 'The answer is approved.' };
       },
     };
+    const load = vi.fn(async (eventId: string) => ({
+      eventId,
+      event: { status: 'active', effective_from: '', review_by: '' },
+      eventMarkdown: 'Chatwoot snapshot answer',
+      sharedMarkdown: 'Shared answer',
+    }));
     const deps = {
-      config: { ...config, ai: { ...config.ai!, defaultEventId: 'jama-ama-v1.3' } },
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
       store,
       openai,
       history,
       telnyx,
-      knowledge: { load: async () => ({
-        eventId: 'jama-ama-v1.3',
-        event: { status: 'active', effective_from: '', review_by: '' },
-        eventMarkdown: 'Chatwoot snapshot answer',
-        sharedMarkdown: 'Shared answer',
-      }) },
+      knowledge: { load },
     };
 
     const result = await processAiPostInbound(input('inbound-provider', 34), deps);
 
     expect(result.outcome).toBe('answered');
+    expect(load).toHaveBeenCalledWith('jama-ama-v1.3');
     expect(approvedContext).toBe('Chatwoot snapshot answer\nShared answer');
+  });
+
+  it('preserves local no-knowledge-base behavior without invoking a provider', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const load = vi.fn(async () => ({
+      eventId: 'unexpected',
+      event: { status: 'active', effective_from: '', review_by: '' },
+      eventMarkdown: 'unexpected',
+      sharedMarkdown: '',
+    }));
+    let requestEventId = '';
+    const openai = {
+      async generate(request: { eventId: string }) {
+        requestEventId = request.eventId;
+        return { kind: 'answer' as const, text: 'The smoke answer.' };
+      },
+    };
+    const result = await processAiPostInbound(input('inbound-local-no-knowledge', 35), {
+      config,
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge: { load },
+    });
+
+    expect(result.outcome).toBe('answered');
+    expect(requestEventId).toBe('no-knowledge-base');
+    expect(load).not.toHaveBeenCalled();
   });
 
   it('treats two distinct inbound messages with identical text as separate replies', async () => {

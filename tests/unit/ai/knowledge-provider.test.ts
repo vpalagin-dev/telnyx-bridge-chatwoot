@@ -46,6 +46,24 @@ describe('createKnowledgeProvider', () => {
     expect(localLoader).not.toHaveBeenCalled();
   });
 
+  it('falls back to the local loader when the active snapshot is local', async () => {
+    const store = storeWith({
+      snapshot: {
+        id: 'snapshot-local', profileId: 'jama-help-center', source: 'local', contentHash: 'hash', articleCount: 1,
+        activatedAt: '2025-02-03T04:05:06.000Z',
+      },
+      documents: [{ sourceArticleId: 1, slug: 'local', title: 'Local', content: 'Local content.', sourceUpdatedAt: '2025-02-01T00:00:00.000Z', position: 1 }],
+    });
+    const localLoader = vi.fn(async () => localKnowledge);
+
+    const result = await createKnowledgeProvider({
+      source: 'chatwoot', profileId: 'jama-help-center', localRoot: '/knowledge', localLoader, store,
+    }).load('jama-ama-v1.3');
+
+    expect(result).toBe(localKnowledge);
+    expect(localLoader).toHaveBeenCalledWith('/knowledge', 'jama-ama-v1.3');
+  });
+
   it('falls back to the local loader only when Chatwoot has no active snapshot', async () => {
     const store = storeWith(null);
     const localLoader = vi.fn(async () => localKnowledge);
@@ -70,8 +88,4 @@ describe('createKnowledgeProvider', () => {
     expect(localLoader).toHaveBeenCalledWith('/knowledge', 'jama-ama-v1.3');
     expect(store.getActiveKnowledge).not.toHaveBeenCalled();
   });
-});
-
-it('allows process AI dependencies to supply a knowledge provider', async () => {
-  expect(true).toBe(true);
 });

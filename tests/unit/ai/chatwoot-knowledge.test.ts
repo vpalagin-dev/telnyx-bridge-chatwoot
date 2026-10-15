@@ -62,14 +62,23 @@ describe('Chatwoot Help Center knowledge client', () => {
     const cases: Array<{ body: unknown; status?: number; error: string }> = [
       { body: { error: 'nope' }, status: 500, error: 'chatwoot_knowledge_http_500' },
       { body: { meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_missing_payload' },
-      { body: { payload: [{ ...apiArticle(), id: 'not-a-number' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 2 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [apiArticle()], meta: { current_page: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [{ ...apiArticle(), id: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
+      { body: { payload: [{ ...apiArticle(), title: '   ' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
+      { body: { payload: [{ ...apiArticle(), status: '' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
+      { body: { payload: [{ ...apiArticle(), position: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
+      { body: { payload: [], meta: { current_page: 1, total_pages: 2, published_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
     ];
     for (const testCase of cases) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(testCase.body, testCase.status ?? 200));
       const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
       await expect(client.listPublishedArticles()).rejects.toThrow(testCase.error);
     }
+  });
+
+  it('preserves whitespace exactly when content has no known wrapper', () => {
+    expect(normalizeKnowledgeArticle(article({ content: '  Keep this exact content  ' })).content).toBe('  Keep this exact content  ');
   });
 
   it('normalizes outer import fences without rewriting content or punctuation', () => {

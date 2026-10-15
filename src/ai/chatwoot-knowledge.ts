@@ -50,13 +50,13 @@ function parseArticle(value: unknown): ChatwootKnowledgeArticle {
   if (typeof value !== 'object' || value === null) throw new Error('chatwoot_knowledge_invalid_article');
   const candidate = value as ArticlePayload;
   if (
-    !isFiniteNumber(candidate.id) ||
-    typeof candidate.slug !== 'string' || candidate.slug.length === 0 ||
-    typeof candidate.title !== 'string' ||
+    !isFiniteNumber(candidate.id) || candidate.id <= 0 ||
+    typeof candidate.slug !== 'string' || candidate.slug.trim().length === 0 ||
+    typeof candidate.title !== 'string' || candidate.title.trim().length === 0 ||
     typeof candidate.content !== 'string' ||
-    typeof candidate.status !== 'string' ||
+    typeof candidate.status !== 'string' || candidate.status.trim().length === 0 ||
     !(typeof candidate.updated_at === 'string' || isFiniteNumber(candidate.updated_at)) ||
-    !isFiniteNumber(candidate.position)
+    !isFiniteNumber(candidate.position) || candidate.position < 0
   ) throw new Error('chatwoot_knowledge_invalid_article');
   return {
     id: candidate.id,
@@ -88,8 +88,17 @@ function parsePage(body: unknown): Page {
   }
   const articlesCount = meta.articles_count;
   const publishedCount = meta.published_count;
-  if (articlesCount !== undefined && !positiveInteger(articlesCount) && articlesCount !== 0) throw new Error('chatwoot_knowledge_incomplete_page');
-  if (publishedCount !== undefined && !positiveInteger(publishedCount) && publishedCount !== 0) throw new Error('chatwoot_knowledge_incomplete_page');
+  if (articlesCount !== undefined && (!Number.isInteger(articlesCount) || !isFiniteNumber(articlesCount) || articlesCount < 0)) throw new Error('chatwoot_knowledge_incomplete_page');
+  if (publishedCount !== undefined && (!Number.isInteger(publishedCount) || !isFiniteNumber(publishedCount) || publishedCount < 0)) throw new Error('chatwoot_knowledge_incomplete_page');
+  if (totalPages === undefined && articlesCount === undefined && publishedCount === undefined) {
+    throw new Error('chatwoot_knowledge_incomplete_page');
+  }
+  const publishedOnPage = payload.filter((article) => article.status === 'published').length;
+  if (publishedCount !== undefined && (publishedOnPage > publishedCount || (payload.length === 0 && publishedCount > 0))) {
+    throw new Error('chatwoot_knowledge_incomplete_page');
+  }
+  if (articlesCount !== undefined && payload.length > articlesCount) throw new Error('chatwoot_knowledge_incomplete_page');
+  if (payload.length === 0 && articlesCount !== undefined && articlesCount > 0) throw new Error('chatwoot_knowledge_incomplete_page');
   const page: Page = { payload, currentPage: meta.current_page };
   if (totalPages !== undefined) page.totalPages = totalPages;
   if (articlesCount !== undefined) page.articlesCount = articlesCount;
@@ -106,15 +115,13 @@ function inferredTotalPages(page: Page): number {
 }
 
 function removeKnownWrappers(content: string): string {
-  let normalized = content.trim();
-  const fence = normalized.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
-  if (fence) normalized = fence[1]!.trim();
-  return normalized;
+  const fence = content.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
+  return fence ? fence[1]!.trim() : content;
 }
 
 export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): KnowledgeDocument {
   const content = removeKnownWrappers(article.content);
-  if (!content) throw new Error('chatwoot_knowledge_empty_content');
+  if (!content.trim()) throw new Error('chatwoot_knowledge_empty_content');
   return {
     sourceArticleId: article.id,
     slug: article.slug,

@@ -42,3 +42,20 @@ Implemented and committed the Chatwoot Help Center article client, published fil
 - Pagination supports explicit `total_pages`, `pages`, and `page_count` metadata. If explicit total pages are absent, it uses published/article counts and the number of published articles on the current page as a conservative fallback. A page whose metadata claims continuation but has no payload is rejected.
 - The normalizer intentionally does not summarize, rewrite, strip arbitrary HTML, or alter factual text. It removes only an outer code fence with optional `markdown`, `md`, or `text` language labels.
 - Full-suite persistence tests that require external services remained skipped by the repository's existing test configuration; all runnable tests passed.
+
+## Fix round 1 (review findings)
+
+Addressed the scoped review findings in `src/ai/chatwoot-knowledge.ts` and `tests/unit/ai/chatwoot-knowledge.test.ts`:
+
+- Pagination now fails closed when neither a total-page field nor article/published count metadata is present.
+- Empty payloads are rejected when counts claim articles exist, including `published_count > 0`; continuation pages with empty payloads remain invalid.
+- Pagination count consistency is checked against the current payload and invalid/truncated responses are rejected.
+- Article validation now rejects non-positive IDs, negative positions, blank slugs/titles, and empty/whitespace statuses.
+- Unwrapped content retains its original leading/trailing whitespace; only recognized outer code fences are trimmed/removed. Whitespace-only content is still rejected.
+- Added regression coverage for missing pagination metadata, inconsistent counts, malformed semantic fields, incomplete/truncated responses, and unwrapped whitespace preservation.
+
+Fix-round verification:
+
+- `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts`: 5 passed.
+- `npm run typecheck`: exited 0.
+- TDD red evidence: the new regression tests initially failed 2 cases before production changes; after the fixes they passed.

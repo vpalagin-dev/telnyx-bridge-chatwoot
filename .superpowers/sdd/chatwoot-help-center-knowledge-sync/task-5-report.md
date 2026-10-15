@@ -15,6 +15,12 @@
 
 Focused lifecycle tests cover runtime construction, store/sync ordering, initial-sync failure continuation, local-mode sync suppression, shutdown ordering, and provider pass-through. Full command results are recorded in the implementation session and commit review.
 
+## Fix Round 1: Sanitized Initial Sync Logging
+
+Commit `a390e867f56b9202afefe7bc332b26df910f268d` removes raw initial-sync errors from worker logs. The worker now records only a fixed error name and optional string error code, preventing exception messages, stack traces, article content, or tokens from being emitted.
+
+Verification after the fix: focused lifecycle/AI tests passed (**18 passed**) and `npm run typecheck` passed.
+
 ## Known limitations
 
 - This task does not deploy or alter Railway/GitHub configuration.

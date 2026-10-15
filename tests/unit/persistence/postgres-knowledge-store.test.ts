@@ -47,14 +47,16 @@ describe('PostgresKnowledgeStore', () => {
     expect(result?.snapshot.activatedAt).toBe('2026-01-03T00:00:00.000Z');
   });
 
-  it('rolls back activation when document insertion fails', async () => {
+  it('rolls back activation when document insertion fails without changing the prior active snapshot', async () => {
     const queries: string[] = [];
-    const client = fakeClient(queries, { insertSnapshot: 'snapshot-1', failDocuments: true });
+    const client = fakeClient(queries, { insertSnapshot: 'snapshot-1', failDocuments: true, priorActive: true });
+    const priorActiveSnapshot = { ...client.activeSnapshot! };
     const store = new PostgresKnowledgeStore('postgres://unused', fakePool(client));
 
     await expect(store.activateChatwootSnapshot('profile', documents, 'hash')).rejects.toThrow('document insert failed');
     expect(queries).toEqual(expect.arrayContaining(['BEGIN', 'ROLLBACK']));
     expect(queries).not.toContain('COMMIT');
+    expect(client.activeSnapshot).toEqual(priorActiveSnapshot);
   });
 });
 
@@ -62,20 +64,32 @@ function fakePool(client: PoolClient): Pool {
   return { connect: async () => client, query: (...args: unknown[]) => (client.query as unknown as (...queryArgs: unknown[]) => Promise<unknown>)(...args) } as unknown as Pool;
 }
 
-function fakeClient(queries: string[], options: { insertSnapshot?: string; activeRows?: unknown[]; documentRows?: unknown[]; failDocuments?: boolean }): PoolClient {
-  return {
+type ActiveSnapshot = { id: string; contentHash: string; status: 'active' | 'superseded' };
+type FakeClient = PoolClient & { activeSnapshot: ActiveSnapshot | null };
+
+function fakeClient(queries: string[], options: { insertSnapshot?: string; activeRows?: unknown[]; documentRows?: unknown[]; failDocuments?: boolean; priorActive?: boolean }): FakeClient {
+  let activeSnapshot: ActiveSnapshot | null = options.priorActive
+    ? { id: 'prior-snapshot', contentHash: 'prior-hash', status: 'active' }
+    : null;
+  let transactionSnapshot: ActiveSnapshot | null = activeSnapshot && { ...activeSnapshot };
+  const client = {
+    get activeSnapshot() { return activeSnapshot; },
     async query(sql: string) {
       queries.push(sql);
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount: null, rows: [] };
+      if (sql === 'BEGIN') { transactionSnapshot = activeSnapshot && { ...activeSnapshot }; return { rowCount: null, rows: [] }; }
+      if (sql === 'ROLLBACK') { activeSnapshot = transactionSnapshot; return { rowCount: null, rows: [] }; }
+      if (sql === 'COMMIT') return { rowCount: null, rows: [] };
       if (sql.includes('INSERT INTO telnyx_bridge.knowledge_snapshots')) return { rowCount: 1, rows: [{ id: options.insertSnapshot ?? 'snapshot-1', profile_id: 'jama-ama-v1.3', source: 'chatwoot', content_hash: 'hash-1', article_count: 2, activated_at: new Date('2026-01-03T00:00:00.000Z') }] };
       if (sql.includes('INSERT INTO telnyx_bridge.knowledge_documents') && options.failDocuments) throw new Error('document insert failed');
+      if (sql.includes("SET status = 'superseded'")) { if (activeSnapshot) activeSnapshot.status = 'superseded'; return { rowCount: 1, rows: [] }; }
       if (sql.includes("SET status = 'active'")) return { rowCount: 1, rows: [{ id: options.insertSnapshot ?? 'snapshot-1', profile_id: 'jama-ama-v1.3', source: 'chatwoot', content_hash: 'hash-1', article_count: 2, activated_at: new Date('2026-01-03T00:00:00.000Z') }] };
       if (sql.includes('SELECT id, profile_id')) return { rowCount: options.activeRows?.length ?? 0, rows: options.activeRows ?? [] };
       if (sql.includes('SELECT source_article_id')) return { rowCount: options.documentRows?.length ?? 0, rows: options.documentRows ?? [] };
       return { rowCount: 1, rows: [] };
     },
     release() {},
-  } as unknown as PoolClient;
+  } as unknown as FakeClient;
+  return client;
 }
 
 void (null as unknown as KnowledgeStore);

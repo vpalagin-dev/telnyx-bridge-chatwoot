@@ -117,10 +117,19 @@ describe('Chatwoot Help Center knowledge client', () => {
       slug: 'founders',
       title: 'Who founded JAMA?',
       content: 'JAMA! was founded...',
-      sourceUpdatedAt: '1792090615',
+      sourceUpdatedAt: '2026-10-15T18:56:55.000Z',
       position: 10,
     });
     expect(normalizeKnowledgeArticle(article({ content: '```markdown\nKeep *this* punctuation!\n```' })).content).toBe('Keep *this* punctuation!');
+  });
+
+  it('normalizes millisecond Unix timestamps to ISO timestamps', () => {
+    expect(normalizeKnowledgeArticle(article({ updatedAt: 1792090615000 })).sourceUpdatedAt).toBe('2026-10-15T18:56:55.000Z');
+  });
+
+  it('preserves valid string timestamps', () => {
+    const sourceUpdatedAt = '2026-10-15T00:16:55.000Z';
+    expect(normalizeKnowledgeArticle(article({ updatedAt: sourceUpdatedAt })).sourceUpdatedAt).toBe(sourceUpdatedAt);
   });
 
   it('rejects an article whose normalized content is empty', () => {

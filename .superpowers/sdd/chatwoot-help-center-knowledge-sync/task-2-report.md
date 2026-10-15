@@ -37,3 +37,24 @@ The Task 2 changes are committed as:
 
 - A live PostgreSQL integration run still requires a disposable PostgreSQL instance exposed through `TEST_DATABASE_URL`; it was intentionally skipped according to repository conventions when unavailable.
 - Existing deployments that already have a conflicting/invalid knowledge table definition would need a reviewed migration beyond the current `CREATE TABLE IF NOT EXISTS` upgrade-safe initialization pattern.
+
+## Fix Round: Chatwoot Timestamp Normalization and Rollback Coverage
+
+### Changes
+
+- Normalized numeric Chatwoot `updated_at` values as Unix seconds or milliseconds based on magnitude, emitting valid ISO timestamps for PostgreSQL `timestamptz` insertion.
+- Preserved valid string timestamps as supplied.
+- Strengthened the document-insertion rollback unit test to model a concrete pre-existing active snapshot and assert its identity, content hash, and active status remain unchanged after rollback; retained `BEGIN`, `ROLLBACK`, and no-`COMMIT` assertions.
+
+### Verification
+
+- `npx vitest run tests/unit/ai/chatwoot-knowledge.test.ts tests/unit/persistence/postgres-knowledge-store.test.ts`: 2 files passed, 13 tests passed.
+- `npm run typecheck`: passed with exit code 0.
+
+### Commit
+
+- Fix committed as `fix(persistence): normalize knowledge timestamps and verify rollback`.
+
+### Concerns
+
+- Live PostgreSQL integration tests remain environment-gated and were not run because `TEST_DATABASE_URL` is not configured.

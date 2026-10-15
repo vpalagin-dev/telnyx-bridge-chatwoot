@@ -114,12 +114,15 @@ function removeKnownWrappers(content: string): string {
 export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): KnowledgeDocument {
   const content = removeKnownWrappers(article.content);
   if (!content.trim()) throw new Error('chatwoot_knowledge_empty_content');
+  const sourceUpdatedAt = typeof article.updatedAt === 'number'
+    ? new Date(Math.abs(article.updatedAt) >= 1_000_000_000_000 ? article.updatedAt : article.updatedAt * 1000).toISOString()
+    : article.updatedAt;
   return {
     sourceArticleId: article.id,
     slug: article.slug,
     title: article.title,
     content,
-    sourceUpdatedAt: String(article.updatedAt),
+    sourceUpdatedAt,
     position: article.position,
   };
 }

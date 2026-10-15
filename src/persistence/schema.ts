@@ -93,6 +93,32 @@ CREATE INDEX IF NOT EXISTS ai_decisions_inbound_idx ON ${BRIDGE_SCHEMA}.ai_decis
 CREATE INDEX IF NOT EXISTS ai_decisions_history_idx ON ${BRIDGE_SCHEMA}.ai_decisions (chatwoot_history_message_id);
 CREATE INDEX IF NOT EXISTS ai_reply_sends_phone_time_idx ON ${BRIDGE_SCHEMA}.ai_reply_sends (phone, sent_at);
 
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.knowledge_snapshots (
+  id uuid PRIMARY KEY,
+  profile_id text NOT NULL,
+  source text NOT NULL CHECK (source IN ('chatwoot', 'local')),
+  content_hash text NOT NULL,
+  article_count integer NOT NULL CHECK (article_count >= 0),
+  status text NOT NULL CHECK (status IN ('draft', 'active', 'superseded')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  activated_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.knowledge_documents (
+  snapshot_id uuid NOT NULL REFERENCES ${BRIDGE_SCHEMA}.knowledge_snapshots(id),
+  source_article_id bigint NOT NULL,
+  slug text NOT NULL,
+  title text NOT NULL,
+  content text NOT NULL,
+  source_updated_at timestamptz NOT NULL,
+  position integer NOT NULL,
+  PRIMARY KEY (snapshot_id, source_article_id)
+);
+
+CREATE INDEX IF NOT EXISTS knowledge_snapshots_active_profile_idx ON ${BRIDGE_SCHEMA}.knowledge_snapshots (profile_id) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_snapshots_one_active_profile_idx ON ${BRIDGE_SCHEMA}.knowledge_snapshots (profile_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS knowledge_documents_position_idx ON ${BRIDGE_SCHEMA}.knowledge_documents (snapshot_id, position, source_article_id);
+
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ADD COLUMN IF NOT EXISTS result_code text;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ALTER COLUMN status SET DEFAULT 'pending';
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS published_at timestamptz;

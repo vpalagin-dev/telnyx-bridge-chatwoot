@@ -32,7 +32,6 @@ const config: BridgeConfig = {
     maxInputTokens: 2048,
     maxOutputTokens: 256,
     timeoutMs: 5000,
-    defaultEventId: 'event-afrorave-river',
     knowledgeRoot: 'specs/002-jama-ai-assistant-smoke/knowledge',
     safeFallbackText: 'Human help is on the way.',
     escalationEnabled: true,

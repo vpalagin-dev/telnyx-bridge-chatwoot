@@ -12,7 +12,7 @@ const config: BridgeConfig = {
   chatwoot: { url: 'http://localhost:3001', accountId: 1, inboxId: 2, apiToken: 'test' },
   telnyx: { apiKey: 'test', senderNumber: '+15551234567' }, outbound: { mode: 'fake' }, webhookToleranceSeconds: 300,
   ai: { enabled: true, providerMode: 'fake', liveOpenAiEnabled: false, model: 'gpt-4o-mini', maxInputTokens: 2048,
-    maxOutputTokens: 256, timeoutMs: 5000, defaultEventId: 'event-afrorave-river', knowledgeRoot: 'specs/002-jama-ai-assistant-smoke/knowledge',
+    maxOutputTokens: 256, timeoutMs: 5000, knowledgeRoot: 'specs/002-jama-ai-assistant-smoke/knowledge',
     safeFallbackText: 'Human help is on the way.', escalationEnabled: true, debounceMs: 0, replyLimit: 10, replyLimitWindowMs: 86400000 },
   aiOutbound: { liveSmsApproved: false, recipientAllowlist: [] },
 };

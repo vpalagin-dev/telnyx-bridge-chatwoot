@@ -58,11 +58,33 @@ export function createKnowledgeSyncService(options: {
   let running: Promise<void> | undefined;
   let handle: KnowledgeSyncHandle | undefined;
 
+  function stageError(code: string, cause: unknown): Error & { code: string } {
+    const error = new Error(code);
+    error.name = cause instanceof Error ? cause.name : 'Error';
+    Object.defineProperty(error, 'code', { value: code, enumerable: true });
+    return error as Error & { code: string };
+  }
+
   async function syncOnce(): Promise<{ activated: boolean; articleCount: number; contentHash: string }> {
-    const articles = await options.client.listPublishedArticles();
-    const documents = stableDocuments(articles.map(normalizeKnowledgeArticle));
+    let articles: Awaited<ReturnType<ChatwootHelpCenterClient['listPublishedArticles']>>;
+    try {
+      articles = await options.client.listPublishedArticles();
+    } catch (error) {
+      throw stageError('knowledge_fetch_failed', error);
+    }
+
+    let documents: KnowledgeDocument[];
+    try {
+      documents = stableDocuments(articles.map(normalizeKnowledgeArticle));
+    } catch (error) {
+      throw stageError('knowledge_normalize_failed', error);
+    }
     const contentHash = hashDocuments(documents);
-    await options.store.activateChatwootSnapshot(options.profileId, documents, contentHash);
+    try {
+      await options.store.activateChatwootSnapshot(options.profileId, documents, contentHash);
+    } catch (error) {
+      throw stageError('knowledge_activation_failed', error);
+    }
     return { activated: true, articleCount: documents.length, contentHash };
   }
 

@@ -80,7 +80,7 @@ describe('knowledge sync service', () => {
     knowledgeStore.activateChatwootSnapshot.mockRejectedValueOnce(new Error('raw-secret-token'));
     const service = createKnowledgeSyncService({ client: client([article()]), store: knowledgeStore, profileId: 'jama', intervalMs: 1000 });
 
-    await expect(service.syncOnce()).rejects.toThrow('raw-secret-token');
+    await expect(service.syncOnce()).rejects.toMatchObject({ code: 'knowledge_activation_failed' });
     expect(knowledgeStore.activateChatwootSnapshot).toHaveBeenCalledTimes(1);
   });
 
@@ -119,15 +119,19 @@ describe('knowledge sync service', () => {
     const serialized = JSON.stringify([...logger.info.mock.calls, ...logger.error.mock.calls]);
     expect(serialized).not.toContain('top-secret');
     expect(serialized).not.toContain('private');
-    expect(logger.error).toHaveBeenCalledWith({ code: 'knowledge_sync_failed', errorName: 'Error' }, 'knowledge sync failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      { code: 'knowledge_sync_failed', errorName: 'Error', errorCode: 'knowledge_fetch_failed' },
+      'knowledge sync failed',
+    );
   });
 
-  it('includes a safe error code without leaking the error message', async () => {
+  it('includes a safe stage code for activation failures without leaking the error message', async () => {
     const logger = { info: vi.fn(), error: vi.fn() };
-    const failure = Object.assign(new Error('postgres password=secret'), { code: '23505' });
+    const knowledgeStore = store();
+    knowledgeStore.activateChatwootSnapshot.mockRejectedValueOnce(Object.assign(new Error('postgres password=secret'), { code: '23505' }));
     const service = createKnowledgeSyncService({
-      client: client(failure),
-      store: store(),
+      client: client([article()]),
+      store: knowledgeStore,
       profileId: 'jama',
       intervalMs: 1000,
       logger,
@@ -137,7 +141,10 @@ describe('knowledge sync service', () => {
     await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
     await handle.stop();
 
-    expect(logger.error).toHaveBeenCalledWith({ code: 'knowledge_sync_failed', errorName: 'Error', errorCode: '23505' }, 'knowledge sync failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      { code: 'knowledge_sync_failed', errorName: 'Error', errorCode: 'knowledge_activation_failed' },
+      'knowledge sync failed',
+    );
     const serialized = JSON.stringify(logger.error.mock.calls);
     expect(serialized).not.toContain('postgres password=secret');
     expect(serialized).not.toContain('secret');
@@ -184,8 +191,28 @@ describe('knowledge sync service', () => {
     const knowledgeStore = store();
     const service = createKnowledgeSyncService({ client: client([{ ...article(), content: '' }]), store: knowledgeStore, profileId: 'jama', intervalMs: 1000 });
 
-    await expect(service.syncOnce()).rejects.toThrow();
+    await expect(service.syncOnce()).rejects.toMatchObject({ code: 'knowledge_normalize_failed' });
     expect(knowledgeStore.activateChatwootSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('logs a normalize stage code when article content is empty after normalization', async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const service = createKnowledgeSyncService({
+      client: client([article({ content: '```\n  \n```' })]),
+      store: store(),
+      profileId: 'jama',
+      intervalMs: 1000,
+      logger,
+    });
+
+    const handle = service.start();
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
+    await handle.stop();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      { code: 'knowledge_sync_failed', errorName: 'Error', errorCode: 'knowledge_normalize_failed' },
+      'knowledge sync failed',
+    );
   });
 
   it('starts with an immediate sync and schedules the next attempt', async () => {

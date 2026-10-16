@@ -80,8 +80,16 @@ export function createKnowledgeSyncService(options: {
       .then((result) => {
         logger.info({ articleCount: result.articleCount, contentHash: result.contentHash }, 'knowledge sync activated');
       })
-      .catch(() => {
-        logger.error({ code: 'knowledge_sync_failed' }, 'knowledge sync failed');
+      .catch((error: unknown) => {
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+          ? (error as { code: string }).code
+          : undefined;
+        logger.error({
+          code: 'knowledge_sync_failed',
+          errorName,
+          ...(errorCode ? { errorCode } : {}),
+        }, 'knowledge sync failed');
       })
       .then(() => undefined);
     try {

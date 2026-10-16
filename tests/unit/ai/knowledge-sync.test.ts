@@ -119,7 +119,28 @@ describe('knowledge sync service', () => {
     const serialized = JSON.stringify([...logger.info.mock.calls, ...logger.error.mock.calls]);
     expect(serialized).not.toContain('top-secret');
     expect(serialized).not.toContain('private');
-    expect(logger.error).toHaveBeenCalledWith({ code: 'knowledge_sync_failed' }, 'knowledge sync failed');
+    expect(logger.error).toHaveBeenCalledWith({ code: 'knowledge_sync_failed', errorName: 'Error' }, 'knowledge sync failed');
+  });
+
+  it('includes a safe error code without leaking the error message', async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const failure = Object.assign(new Error('postgres password=secret'), { code: '23505' });
+    const service = createKnowledgeSyncService({
+      client: client(failure),
+      store: store(),
+      profileId: 'jama',
+      intervalMs: 1000,
+      logger,
+    });
+
+    const handle = service.start();
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
+    await handle.stop();
+
+    expect(logger.error).toHaveBeenCalledWith({ code: 'knowledge_sync_failed', errorName: 'Error', errorCode: '23505' }, 'knowledge sync failed');
+    const serialized = JSON.stringify(logger.error.mock.calls);
+    expect(serialized).not.toContain('postgres password=secret');
+    expect(serialized).not.toContain('secret');
   });
 
   it('logs a sanitized failure and continues scheduling after a failed attempt', async () => {

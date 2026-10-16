@@ -15,10 +15,22 @@ export async function runWorkerRuntime(
   run: RunWorker = runWorker,
 ): Promise<void> {
   let syncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
+  let contactSyncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
   try {
     await pipeline.receiptStore.initialize();
     await pipeline.operationalStore.initialize();
     await pipeline.knowledgeStore.initialize();
+    if (pipeline.contactSyncStore) await pipeline.contactSyncStore.initialize();
+
+    if (pipeline.contactSync) {
+      try {
+        contactSyncHandle = pipeline.contactSync.start();
+        await contactSyncHandle.ready;
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        logger.error({ component: 'contacts', event: 'initial_sync_failed', errorName }, 'initial contact sync failed; continuing worker');
+      }
+    }
 
     if ((pipeline.config.ai?.knowledgeSource ?? 'local') === 'chatwoot') {
       try {
@@ -53,7 +65,9 @@ export async function runWorkerRuntime(
       },
     });
   } finally {
+    await contactSyncHandle?.stop().catch(() => undefined);
     await syncHandle?.stop().catch(() => undefined);
+    await pipeline.jamaContactsSource?.close().catch(() => undefined);
     await redis.close().catch(() => undefined);
     await pipeline.pool.end().catch(() => undefined);
   }

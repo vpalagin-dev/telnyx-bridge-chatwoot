@@ -1,3 +1,4 @@
+import type { ChatwootCrmContactPayload } from '../contacts/types.js';
 import { normalizePhone } from '../domain/phone.js';
 import type { ChatwootClient, ChatwootContact, ChatwootConversation, ChatwootAiHistoryWriter, AiHistoryMetadata } from './client.js';
 
@@ -48,19 +49,14 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
     return response.json();
   }
 
-  async findContactByPhone(phone: string): Promise<ChatwootContact | null> {
+  async #searchContacts(query: string): Promise<any[]> {
     const data = await this.#request(
-      `/api/v1/accounts/${this.#options.accountId}/contacts/search?q=${encodeURIComponent(phone)}`,
+      `/api/v1/accounts/${this.#options.accountId}/contacts/search?q=${encodeURIComponent(query)}`,
     );
-    const contacts = Array.isArray(data.payload) ? data.payload : [];
-    const contact = contacts.find((candidate: any) => {
-      try {
-        return normalizePhone(candidate.phone_number ?? candidate.phone ?? '') === phone;
-      } catch {
-        return false;
-      }
-    });
-    if (!contact) return null;
+    return Array.isArray(data.payload) ? data.payload : [];
+  }
+
+  async #ensureInboxBinding(contact: any): Promise<ChatwootContact> {
     const existingInbox = inboxBinding(contact, this.#options.inboxId);
     if (existingInbox?.source_id) return { id: contact.id, sourceId: existingInbox.source_id };
     const attached = await this.#request(`/api/v1/accounts/${this.#options.accountId}/contacts/${contact.id}/contact_inboxes`, {
@@ -72,11 +68,7 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
     return { id: contact.id, sourceId };
   }
 
-  async createContact(phone: string): Promise<ChatwootContact> {
-    const data = await this.#request(`/api/v1/accounts/${this.#options.accountId}/contacts`, {
-      method: 'POST',
-      body: JSON.stringify({ name: phone, phone_number: phone, inbox_id: this.#options.inboxId }),
-    });
+  #contactFromCreateResponse(data: any): ChatwootContact {
     const contact = data.payload?.contact ?? data.payload ?? data;
     const contactInbox =
       inboxBinding(contact, this.#options.inboxId) ??
@@ -84,6 +76,73 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
       inboxBinding(data, this.#options.inboxId);
     if (!contactInbox?.source_id) throw new Error('Chatwoot contact response lacked the configured inbox binding');
     return { id: contact.id, sourceId: contactInbox.source_id };
+  }
+
+  async findContactByPhone(phone: string): Promise<ChatwootContact | null> {
+    const contacts = await this.#searchContacts(phone);
+    const contact = contacts.find((candidate: any) => {
+      try {
+        return normalizePhone(candidate.phone_number ?? candidate.phone ?? '') === phone;
+      } catch {
+        return false;
+      }
+    });
+    if (!contact) return null;
+    return this.#ensureInboxBinding(contact);
+  }
+
+  async findContactByIdentifier(identifier: string): Promise<ChatwootContact | null> {
+    const contacts = await this.#searchContacts(identifier);
+    const contact = contacts.find((candidate: any) => String(candidate.identifier ?? '') === identifier);
+    if (!contact) return null;
+    return this.#ensureInboxBinding(contact);
+  }
+
+  async createContact(phone: string): Promise<ChatwootContact> {
+    const data = await this.#request(`/api/v1/accounts/${this.#options.accountId}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify({ name: phone, phone_number: phone, inbox_id: this.#options.inboxId }),
+    });
+    return this.#contactFromCreateResponse(data);
+  }
+
+  async #updateCrmContact(contactId: number, payload: ChatwootCrmContactPayload): Promise<void> {
+    const body: Record<string, string> = {
+      name: payload.name,
+      phone_number: payload.phone,
+      identifier: payload.identifier,
+    };
+    if (payload.email) body.email = payload.email;
+    await this.#request(`/api/v1/accounts/${this.#options.accountId}/contacts/${contactId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async upsertCrmContact(payload: ChatwootCrmContactPayload): Promise<ChatwootContact> {
+    const existing =
+      (await this.findContactByIdentifier(payload.identifier))
+      ?? (await this.findContactByPhone(payload.phone));
+    if (existing) {
+      await this.#updateCrmContact(existing.id, payload);
+      const refreshed =
+        (await this.findContactByIdentifier(payload.identifier))
+        ?? (await this.findContactByPhone(payload.phone));
+      if (!refreshed) throw new Error('Chatwoot contact missing after CRM update');
+      return refreshed;
+    }
+    const body: Record<string, string | number> = {
+      inbox_id: this.#options.inboxId,
+      name: payload.name,
+      phone_number: payload.phone,
+      identifier: payload.identifier,
+    };
+    if (payload.email) body.email = payload.email;
+    const data = await this.#request(`/api/v1/accounts/${this.#options.accountId}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return this.#contactFromCreateResponse(data);
   }
 
   async findConversation(contactId: number): Promise<ChatwootConversation | null> {

@@ -13,9 +13,16 @@ class FakeChatwoot implements ChatwootClient {
     this.calls.push(`find-contact:${phone}`);
     return this.contact;
   }
+  async findContactByIdentifier(identifier: string) {
+    this.calls.push(`find-identifier:${identifier}`);
+    return null;
+  }
   async createContact(phone: string) {
     this.calls.push(`create-contact:${phone}`);
     return { id: 10, sourceId: 'source-10' };
+  }
+  async upsertCrmContact(): Promise<ChatwootContact> {
+    throw new Error('not expected in inbound tests');
   }
   async findConversation(contactId: number) {
     this.calls.push(`find-conversation:${contactId}`);

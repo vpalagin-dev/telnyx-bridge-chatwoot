@@ -15,6 +15,9 @@ import type { KnowledgeStore } from './persistence/knowledge-store.js';
 import { createChatwootHelpCenterClient, type ChatwootHelpCenterClient } from './ai/chatwoot-knowledge.js';
 import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-provider.js';
 import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
+import { createContactSyncService, type ContactSyncService } from './contacts/contact-sync.js';
+import { createJamaContactsSource, type JamaContactsSource } from './contacts/jama-contacts-source.js';
+import { PostgresContactSyncStore } from './persistence/postgres-contact-sync-store.js';
 import { createLogger } from './observability/logger.js';
 
 const defaults = (c: BridgeConfig): BridgeConfig => ({
@@ -53,6 +56,9 @@ export type RuntimePipeline = {
   knowledgeStore: KnowledgeStore;
   knowledgeProvider: KnowledgeProvider;
   knowledgeSync: KnowledgeSyncService;
+  contactSync?: ContactSyncService;
+  jamaContactsSource?: JamaContactsSource;
+  contactSyncStore?: PostgresContactSyncStore;
 };
 
 export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
@@ -96,7 +102,46 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     intervalMs: config.ai?.knowledgeSyncIntervalMs ?? 300000,
     logger: createLogger(),
   });
-  return { config, pool, operationalStore, receiptStore, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx, knowledgeStore, knowledgeProvider, knowledgeSync };
+
+  let contactSync: ContactSyncService | undefined;
+  let jamaContactsSource: JamaContactsSource | undefined;
+  let contactSyncStore: PostgresContactSyncStore | undefined;
+  if (config.contactSync?.enabled) {
+    const jamaPool = new Pool({ connectionString: config.contactSync.databaseUrl });
+    jamaContactsSource = createJamaContactsSource({
+      pool: jamaPool,
+      schema: config.contactSync.schema,
+      table: config.contactSync.table,
+    });
+    contactSyncStore = new PostgresContactSyncStore(config.databaseUrl, pool);
+    contactSync = createContactSyncService({
+      source: jamaContactsSource,
+      store: contactSyncStore,
+      chatwoot,
+      batchSize: config.contactSync.batchSize,
+      intervalMs: config.contactSync.intervalMs,
+      delayMs: config.contactSync.delayMs,
+      logger: createLogger(),
+    });
+  }
+
+  return {
+    config,
+    pool,
+    operationalStore,
+    receiptStore,
+    chatwoot,
+    telnyx,
+    openai,
+    history: chatwoot,
+    aiTelnyx,
+    knowledgeStore,
+    knowledgeProvider,
+    knowledgeSync,
+    ...(contactSync ? { contactSync } : {}),
+    ...(jamaContactsSource ? { jamaContactsSource } : {}),
+    ...(contactSyncStore ? { contactSyncStore } : {}),
+  };
 }
 
 export function buildRuntime(raw: BridgeConfig) {

@@ -46,6 +46,13 @@ const environmentSchema = z
     AI_REPLY_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(604800000).default(86400000),
     AI_LIVE_SMS_APPROVED: bool(false),
     AI_LIVE_RECIPIENT_ALLOWLIST: z.preprocess(blank, z.string().default('')),
+    CONTACT_SYNC_ENABLED: bool(false),
+    JAMA_CONTACTS_DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
+    CONTACT_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
+    CONTACT_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
+    CONTACT_SYNC_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(100),
+    CONTACT_SYNC_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]*$/i).default('jama'),
+    CONTACT_SYNC_TABLE: z.string().regex(/^[a-z_][a-z0-9_]*$/i).default('contacts'),
   })
   .superRefine((env, context) => {
     if (env.OUTBOUND_MODE === 'live' && !env.TEST_RECIPIENT_NUMBER) {
@@ -67,6 +74,9 @@ const environmentSchema = z
      if (env.AI_KNOWLEDGE_SOURCE === 'chatwoot' && !env.CHATWOOT_HELP_CENTER_SLUG.trim()) {
        context.addIssue({ code: 'custom', path: ['CHATWOOT_HELP_CENTER_SLUG'], message: 'required for Chatwoot knowledge source' });
      }
+    if (env.CONTACT_SYNC_ENABLED && !env.JAMA_CONTACTS_DATABASE_URL) {
+      context.addIssue({ code: 'custom', path: ['JAMA_CONTACTS_DATABASE_URL'], message: 'required when CONTACT_SYNC_ENABLED=true' });
+    }
   });
 
 export type BridgeConfig = {
@@ -104,6 +114,15 @@ export type BridgeConfig = {
     replyLimitWindowMs?: number;
   };
   aiOutbound?: { liveSmsApproved: boolean; recipientAllowlist: string[] };
+  contactSync?: {
+    enabled: boolean;
+    databaseUrl: string;
+    intervalMs: number;
+    batchSize: number;
+    delayMs: number;
+    schema: string;
+    table: string;
+  };
 };
 
 export class ConfigError extends Error {
@@ -169,5 +188,18 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       replyLimitWindowMs: env.AI_REPLY_LIMIT_WINDOW_MS,
     },
     aiOutbound: { liveSmsApproved: env.AI_LIVE_SMS_APPROVED, recipientAllowlist: allowlist },
+    ...(env.CONTACT_SYNC_ENABLED && env.JAMA_CONTACTS_DATABASE_URL
+      ? {
+        contactSync: {
+          enabled: true,
+          databaseUrl: env.JAMA_CONTACTS_DATABASE_URL,
+          intervalMs: env.CONTACT_SYNC_INTERVAL_MS,
+          batchSize: env.CONTACT_SYNC_BATCH_SIZE,
+          delayMs: env.CONTACT_SYNC_DELAY_MS,
+          schema: env.CONTACT_SYNC_SCHEMA,
+          table: env.CONTACT_SYNC_TABLE,
+        },
+      }
+      : {}),
   };
 }

@@ -119,6 +119,20 @@ CREATE INDEX IF NOT EXISTS knowledge_snapshots_active_profile_idx ON ${BRIDGE_SC
 CREATE UNIQUE INDEX IF NOT EXISTS knowledge_snapshots_one_active_profile_idx ON ${BRIDGE_SCHEMA}.knowledge_snapshots (profile_id) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS knowledge_documents_position_idx ON ${BRIDGE_SCHEMA}.knowledge_documents (snapshot_id, position, source_article_id);
 
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.contact_sync_cursor (
+  id integer PRIMARY KEY CHECK (id = 1),
+  updated_at timestamptz NOT NULL,
+  contact_id bigint NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.contact_sync_state (
+  source_contact_id bigint PRIMARY KEY,
+  chatwoot_contact_id bigint NOT NULL,
+  content_hash text NOT NULL,
+  source_updated_at timestamptz NOT NULL,
+  synced_at timestamptz NOT NULL DEFAULT now()
+);
+
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ADD COLUMN IF NOT EXISTS result_code text;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ALTER COLUMN status SET DEFAULT 'pending';
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS published_at timestamptz;

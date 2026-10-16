@@ -11,7 +11,9 @@ import { HttpTelnyxClient } from '../../src/telnyx/http-client.js';
 class FakeChatwoot implements ChatwootClient {
   messageCalls = 0;
   async findContactByPhone() { return { id: 10, sourceId: 'source-10' }; }
+  async findContactByIdentifier() { return null; }
   async createContact() { return { id: 10, sourceId: 'source-10' }; }
+  async upsertCrmContact() { return { id: 10, sourceId: 'source-10' }; }
   async findConversation() { return { id: 20, status: 'open' as const }; }
   async createConversation() { return { id: 20, status: 'open' as const }; }
   async reopenConversation() {}

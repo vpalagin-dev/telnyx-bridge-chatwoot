@@ -15,6 +15,7 @@ import type { KnowledgeStore } from './persistence/knowledge-store.js';
 import { createChatwootHelpCenterClient, type ChatwootHelpCenterClient } from './ai/chatwoot-knowledge.js';
 import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-provider.js';
 import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
+import { createLogger } from './observability/logger.js';
 
 const defaults = (c: BridgeConfig): BridgeConfig => ({
   ...c,
@@ -93,6 +94,7 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     store: knowledgeStore,
     profileId,
     intervalMs: config.ai?.knowledgeSyncIntervalMs ?? 300000,
+    logger: createLogger(),
   });
   return { config, pool, operationalStore, receiptStore, chatwoot, telnyx, openai, history: chatwoot, aiTelnyx, knowledgeStore, knowledgeProvider, knowledgeSync };
 }

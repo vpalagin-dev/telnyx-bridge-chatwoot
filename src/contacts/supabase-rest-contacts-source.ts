@@ -26,9 +26,16 @@ function assertIdent(value: string, label: string): void {
   if (!IDENTIFIER.test(value)) throw new Error(`Invalid ${label} for Supabase REST contacts source`);
 }
 
-function cursorFilter(cursorUpdatedAt: Date, cursorContactId: number): string {
-  const iso = cursorUpdatedAt.toISOString();
-  return `or(updated_at.gt.${iso},and(updated_at.eq.${iso},contact_id.gt.${cursorContactId}))`;
+function postgrestTimestamp(value: Date): string {
+  return value.toISOString().replace(/:/g, '%3A');
+}
+
+function querySuffix(cursorUpdatedAt: Date, cursorContactId: number): string {
+  if (cursorUpdatedAt.getTime() === 0 && cursorContactId === 0) {
+    return 'phone_e164=not.is.null';
+  }
+  const iso = postgrestTimestamp(cursorUpdatedAt);
+  return `and=(phone_e164.not.is.null,or(updated_at.gt.${iso},and(updated_at.eq.${iso},contact_id.gt.${cursorContactId})))`;
 }
 
 function mapRow(row: RestContactRow): JamaContactRow | null {
@@ -52,14 +59,15 @@ export function createSupabaseRestContactsSource(options: SupabaseRestContactsSo
 
   return {
     async fetchAfter(cursorUpdatedAt, cursorContactId, limit) {
-      const params = new URLSearchParams({
-        select: 'contact_id,first_name,last_name,email,phone_e164,updated_at',
-        order: 'updated_at.asc,contact_id.asc',
-        limit: String(limit),
-      });
-      params.set('and', `(phone_e164.not.is.null,${cursorFilter(cursorUpdatedAt, cursorContactId)})`);
+      const url = [
+        `${baseUrl}/rest/v1/${options.table}`,
+        '?select=contact_id,first_name,last_name,email,phone_e164,updated_at',
+        '&order=updated_at.asc,contact_id.asc',
+        `&limit=${limit}`,
+        `&${querySuffix(cursorUpdatedAt, cursorContactId)}`,
+      ].join('');
 
-      const response = await fetcher(`${baseUrl}/rest/v1/${options.table}?${params.toString()}`, {
+      const response = await fetcher(url, {
         headers: {
           apikey: options.serviceRoleKey,
           Authorization: `Bearer ${options.serviceRoleKey}`,
@@ -68,7 +76,16 @@ export function createSupabaseRestContactsSource(options: SupabaseRestContactsSo
         },
       });
       if (!response.ok) {
-        throw new Error(`Supabase REST contacts fetch failed with status ${response.status}`);
+        const body = await response.json().catch(() => null);
+        const hint = body && typeof body === 'object' && body !== null && 'message' in body
+          ? String((body as { message?: unknown }).message)
+          : '';
+        const code = body && typeof body === 'object' && body !== null && 'code' in body
+          ? String((body as { code?: unknown }).code)
+          : '';
+        throw new Error(
+          `Supabase REST contacts fetch failed with status ${response.status}${code ? ` code=${code}` : ''}${hint ? `: ${hint}` : ''}`,
+        );
       }
       const payload = await response.json();
       if (!Array.isArray(payload)) throw new Error('Supabase REST contacts response was not an array');

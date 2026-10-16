@@ -102,7 +102,8 @@ export function createContactSyncService(options: {
       })
       .catch((error: unknown) => {
         const errorName = error instanceof Error ? error.name : 'UnknownError';
-        logger.error({ code: 'contact_sync_failed', errorName }, 'contact sync failed');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error({ code: 'contact_sync_failed', errorName, errorMessage }, 'contact sync failed');
       })
       .then(() => undefined);
     try {

@@ -62,16 +62,10 @@ describe('Chatwoot Help Center knowledge client', () => {
     const cases: Array<{ body: unknown; status?: number; error: string }> = [
       { body: { error: 'nope' }, status: 500, error: 'chatwoot_knowledge_http_500' },
       { body: { meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_missing_payload' },
-      { body: { payload: [apiArticle()], meta: { current_page: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
       { body: { payload: [{ ...apiArticle(), id: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), title: '   ' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), status: '' }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
       { body: { payload: [{ ...apiArticle(), position: -1 }], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_invalid_article' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 1, articles_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 1, published_count: 0 } }, error: 'chatwoot_knowledge_incomplete_page' },
-      { body: { payload: [], meta: { current_page: 1, total_pages: 1, articles_count: 0, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
       { body: { payload: [apiArticle()], meta: { current_page: 1, total_pages: 1, articles_count: 2, published_count: 1 } }, error: 'chatwoot_knowledge_incomplete_page' },
     ];
     for (const testCase of cases) {
@@ -105,6 +99,48 @@ describe('Chatwoot Help Center knowledge client', () => {
     const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
 
     await expect(client.listPublishedArticles()).resolves.toEqual([]);
+  });
+
+  it('accepts the live Chatwoot articles index meta shape without total_pages', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        payload: [apiArticle(), apiArticle({ id: 2, slug: 'draft', title: 'Draft', content: 'Draft body', status: 'draft', updatedAt: 1792090616, position: 20 })],
+        meta: {
+          current_page: 1,
+          all_articles_count: 2,
+          articles_count: 2,
+          published_count: 1,
+          draft_articles_count: 1,
+          archived_articles_count: 0,
+          mine_articles_count: 2,
+        },
+      }))
+      .mockResolvedValueOnce(response({
+        payload: [],
+        meta: { current_page: 2, all_articles_count: 2, articles_count: 2, published_count: 1, draft_articles_count: 1 },
+      }));
+    const client = createChatwootHelpCenterClient({
+      baseUrl: 'https://chatwoot.example', accountId: 6, apiToken: 'token', portalSlug: 'jama-help-center', locale: 'en', fetcher,
+    });
+
+    await expect(client.listPublishedArticles()).resolves.toEqual([article()]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('paginates until an empty page when total_pages is absent', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        payload: [apiArticle()],
+        meta: { current_page: 1, published_count: 1 },
+      }))
+      .mockResolvedValueOnce(response({
+        payload: [],
+        meta: { current_page: 2, published_count: 1 },
+      }));
+    const client = createChatwootHelpCenterClient({ baseUrl: 'http://localhost:3001', accountId: 6, apiToken: 'token', portalSlug: 'portal', locale: 'en', fetcher });
+
+    await expect(client.listPublishedArticles()).resolves.toEqual([article()]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('preserves whitespace exactly when content has no known wrapper', () => {

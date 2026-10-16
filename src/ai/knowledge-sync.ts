@@ -25,6 +25,13 @@ const defaultLogger: Logger = {
   error: () => undefined,
 };
 
+const SAFE_STAGE_REASON = /^chatwoot_knowledge_[a-z0-9_]+$/;
+
+function safeStageReason(cause: unknown): string | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  return SAFE_STAGE_REASON.test(cause.message) ? cause.message : undefined;
+}
+
 function stableDocuments(documents: KnowledgeDocument[]): KnowledgeDocument[] {
   return [...documents].sort((left, right) => left.position - right.position || left.sourceArticleId - right.sourceArticleId);
 }
@@ -58,11 +65,29 @@ export function createKnowledgeSyncService(options: {
   let running: Promise<void> | undefined;
   let handle: KnowledgeSyncHandle | undefined;
 
-  function stageError(code: string, cause: unknown): Error & { code: string } {
+  function stageError(code: string, cause: unknown): Error & { code: string; stageReason?: string } {
     const error = new Error(code);
     error.name = cause instanceof Error ? cause.name : 'Error';
     Object.defineProperty(error, 'code', { value: code, enumerable: true });
-    return error as Error & { code: string };
+    const stageReason = safeStageReason(cause);
+    if (stageReason) Object.defineProperty(error, 'stageReason', { value: stageReason, enumerable: true });
+    return error as Error & { code: string; stageReason?: string };
+  }
+
+  function logSyncFailure(error: unknown): void {
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : undefined;
+    const stageReason = error && typeof error === 'object' && 'stageReason' in error && typeof (error as { stageReason?: unknown }).stageReason === 'string'
+      ? (error as { stageReason: string }).stageReason
+      : undefined;
+    logger.error({
+      code: 'knowledge_sync_failed',
+      errorName,
+      ...(errorCode ? { errorCode } : {}),
+      ...(stageReason ? { stageReason } : {}),
+    }, 'knowledge sync failed');
   }
 
   async function syncOnce(): Promise<{ activated: boolean; articleCount: number; contentHash: string }> {
@@ -103,15 +128,7 @@ export function createKnowledgeSyncService(options: {
         logger.info({ articleCount: result.articleCount, contentHash: result.contentHash }, 'knowledge sync activated');
       })
       .catch((error: unknown) => {
-        const errorName = error instanceof Error ? error.name : 'UnknownError';
-        const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
-          ? (error as { code: string }).code
-          : undefined;
-        logger.error({
-          code: 'knowledge_sync_failed',
-          errorName,
-          ...(errorCode ? { errorCode } : {}),
-        }, 'knowledge sync failed');
+        logSyncFailure(error);
       })
       .then(() => undefined);
     try {

@@ -19,6 +19,10 @@ function client(articles: ChatwootKnowledgeArticle[] | Error): ChatwootHelpCente
   return { listPublishedArticles: articles instanceof Error ? vi.fn().mockRejectedValue(articles) : vi.fn().mockResolvedValue(articles) };
 }
 
+function chatwootClientError(reason: string): ChatwootHelpCenterClient {
+  return { listPublishedArticles: vi.fn().mockRejectedValue(new Error(reason)) };
+}
+
 function store(): KnowledgeStore & { activateChatwootSnapshot: ReturnType<typeof vi.fn> } {
   return {
     initialize: vi.fn().mockResolvedValue(undefined),
@@ -125,6 +129,31 @@ describe('knowledge sync service', () => {
     );
   });
 
+  it('includes a safe Chatwoot fetch reason without leaking secrets', async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const service = createKnowledgeSyncService({
+      client: chatwootClientError('chatwoot_knowledge_http_401'),
+      store: store(),
+      profileId: 'jama',
+      intervalMs: 1000,
+      logger,
+    });
+
+    const handle = service.start();
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
+    await handle.stop();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        code: 'knowledge_sync_failed',
+        errorName: 'Error',
+        errorCode: 'knowledge_fetch_failed',
+        stageReason: 'chatwoot_knowledge_http_401',
+      },
+      'knowledge sync failed',
+    );
+  });
+
   it('includes a safe stage code for activation failures without leaking the error message', async () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const knowledgeStore = store();
@@ -210,7 +239,12 @@ describe('knowledge sync service', () => {
     await handle.stop();
 
     expect(logger.error).toHaveBeenCalledWith(
-      { code: 'knowledge_sync_failed', errorName: 'Error', errorCode: 'knowledge_normalize_failed' },
+      {
+        code: 'knowledge_sync_failed',
+        errorName: 'Error',
+        errorCode: 'knowledge_normalize_failed',
+        stageReason: 'chatwoot_knowledge_empty_content',
+      },
       'knowledge sync failed',
     );
   });

@@ -107,7 +107,10 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   let jamaContactsSource: JamaContactsSource | undefined;
   let contactSyncStore: PostgresContactSyncStore | undefined;
   if (config.contactSync?.enabled) {
-    const jamaPool = new Pool({ connectionString: config.contactSync.databaseUrl });
+    const jamaPool = new Pool({
+      connectionString: config.contactSync.databaseUrl,
+      ssl: { rejectUnauthorized: false },
+    });
     jamaContactsSource = createJamaContactsSource({
       pool: jamaPool,
       schema: config.contactSync.schema,

@@ -1,5 +1,19 @@
+import dns from 'node:dns';
 import { parse } from 'pg-connection-string';
 import { Pool, type PoolConfig } from 'pg';
+
+function lookupIpv4(hostname: string, _: unknown, callback: (err: NodeJS.ErrnoException | null, address: string, family?: number) => void): void {
+  dns.lookup(hostname, { family: 4 }, callback);
+}
+
+export type JamaContactsPoolOptions = {
+  databaseUrl: string;
+  password?: string;
+  user?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+};
 
 export type JamaContactsConnectionTarget = {
   user?: string;
@@ -19,26 +33,39 @@ function appendQueryParams(connectionString: string): string {
   return value;
 }
 
-export function describeJamaContactsTarget(databaseUrl: string): JamaContactsConnectionTarget {
-  const parsed = parse(appendQueryParams(databaseUrl));
+function resolvePoolConfig(options: JamaContactsPoolOptions): PoolConfig {
+  const parsed = parse(appendQueryParams(options.databaseUrl));
+  const host = options.host ?? parsed.host ?? undefined;
+  const user = options.user ?? parsed.user ?? undefined;
+  const config: PoolConfig = {
+    host,
+    port: options.port ?? (parsed.port ? Number.parseInt(String(parsed.port), 10) : undefined),
+    user,
+    password: options.password?.trim() || parsed.password || undefined,
+    database: options.database ?? parsed.database ?? undefined,
+    ssl: { rejectUnauthorized: false, ...(host ? { servername: host } : {}) },
+  };
+  if (host?.includes('pooler.supabase.com') && (!user || user === 'postgres')) {
+    throw new Error(
+      'Supabase pooler requires user postgres.PROJECT_REF (copy from Connect → Direct). Set JAMA_CONTACTS_PG_USER if the URI username is wrong.',
+    );
+  }
+  if (!user || !host || !config.database) {
+    throw new Error('JAMA_CONTACTS_DATABASE_URL is missing user, host, or database after parsing');
+  }
+  return config;
+}
+
+export function describeJamaContactsTarget(options: JamaContactsPoolOptions): JamaContactsConnectionTarget {
+  const config = resolvePoolConfig(options);
   const target: JamaContactsConnectionTarget = {};
-  if (parsed.user) target.user = parsed.user;
-  if (parsed.host) target.host = parsed.host;
-  if (parsed.port) target.port = Number.parseInt(String(parsed.port), 10);
-  if (parsed.database) target.database = parsed.database;
+  if (config.user) target.user = String(config.user);
+  if (config.host) target.host = String(config.host);
+  if (config.port) target.port = Number(config.port);
+  if (config.database) target.database = String(config.database);
   return target;
 }
 
-/** Supabase pooler + node-pg: explicit fields avoid broken URI parsing when passwords contain @/#/etc. */
-export function createJamaContactsPool(databaseUrl: string, passwordOverride?: string): Pool {
-  const parsed = parse(appendQueryParams(databaseUrl));
-  const config: PoolConfig = {
-    host: parsed.host ?? undefined,
-    port: parsed.port ? Number.parseInt(String(parsed.port), 10) : undefined,
-    user: parsed.user ?? undefined,
-    password: passwordOverride?.trim() || parsed.password || undefined,
-    database: parsed.database ?? undefined,
-    ssl: { rejectUnauthorized: false },
-  };
-  return new Pool(config);
+export function createJamaContactsPool(options: JamaContactsPoolOptions): Pool {
+  return new Pool({ ...resolvePoolConfig(options), lookup: lookupIpv4 } as PoolConfig);
 }

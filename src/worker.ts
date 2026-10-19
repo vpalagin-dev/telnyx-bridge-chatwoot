@@ -24,9 +24,17 @@ export async function runWorkerRuntime(
     if (pipeline.contactSyncStore) await pipeline.contactSyncStore.initialize();
 
     if (pipeline.contactSync) {
+      const jamaTarget = describeJamaContactsTarget({
+        databaseUrl: pipeline.config.contactSync!.databaseUrl,
+        ...(pipeline.config.contactSync!.databasePassword ? { password: pipeline.config.contactSync!.databasePassword } : {}),
+        ...(pipeline.config.contactSync!.pgUser ? { user: pipeline.config.contactSync!.pgUser } : {}),
+        ...(pipeline.config.contactSync!.pgHost ? { host: pipeline.config.contactSync!.pgHost } : {}),
+        port: pipeline.config.contactSync!.pgPort,
+        database: pipeline.config.contactSync!.pgDatabase,
+      });
       logger.info(
-        describeJamaContactsTarget(pipeline.config.contactSync!.databaseUrl),
-        'jama contacts postgres target',
+        jamaTarget,
+        `jama contacts postgres target user=${jamaTarget.user ?? 'missing'} host=${jamaTarget.host ?? 'missing'}`,
       );
       try {
         contactSyncHandle = pipeline.contactSync.start();

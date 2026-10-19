@@ -108,10 +108,14 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   let jamaContactsSource: JamaContactsSource | undefined;
   let contactSyncStore: PostgresContactSyncStore | undefined;
   if (config.contactSync?.enabled) {
-    const jamaPool = createJamaContactsPool(
-      config.contactSync.databaseUrl,
-      config.contactSync.databasePassword,
-    );
+    const jamaPool = createJamaContactsPool({
+      databaseUrl: config.contactSync.databaseUrl,
+      ...(config.contactSync.databasePassword ? { password: config.contactSync.databasePassword } : {}),
+      ...(config.contactSync.pgUser ? { user: config.contactSync.pgUser } : {}),
+      ...(config.contactSync.pgHost ? { host: config.contactSync.pgHost } : {}),
+      port: config.contactSync.pgPort,
+      database: config.contactSync.pgDatabase,
+    });
     jamaContactsSource = createJamaContactsSource({
       pool: jamaPool,
       schema: config.contactSync.schema,

@@ -49,6 +49,10 @@ const environmentSchema = z
     CONTACT_SYNC_ENABLED: bool(false),
     JAMA_CONTACTS_DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
     JAMA_CONTACTS_DATABASE_PASSWORD: z.preprocess(blank, z.string().min(1).optional()),
+    JAMA_CONTACTS_PG_USER: z.preprocess(blank, z.string().min(1).optional()),
+    JAMA_CONTACTS_PG_HOST: z.preprocess(blank, z.string().min(1).optional()),
+    JAMA_CONTACTS_PG_PORT: z.coerce.number().int().positive().default(5432),
+    JAMA_CONTACTS_PG_DATABASE: z.preprocess(blank, z.string().min(1).default('postgres')),
     CONTACT_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     CONTACT_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
     CONTACT_SYNC_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(100),
@@ -119,6 +123,10 @@ export type BridgeConfig = {
     enabled: boolean;
     databaseUrl: string;
     databasePassword?: string;
+    pgUser?: string;
+    pgHost?: string;
+    pgPort: number;
+    pgDatabase: string;
     intervalMs: number;
     batchSize: number;
     delayMs: number;
@@ -196,6 +204,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
           enabled: true,
           databaseUrl: env.JAMA_CONTACTS_DATABASE_URL,
           ...(env.JAMA_CONTACTS_DATABASE_PASSWORD ? { databasePassword: env.JAMA_CONTACTS_DATABASE_PASSWORD } : {}),
+          ...(env.JAMA_CONTACTS_PG_USER ? { pgUser: env.JAMA_CONTACTS_PG_USER } : {}),
+          ...(env.JAMA_CONTACTS_PG_HOST ? { pgHost: env.JAMA_CONTACTS_PG_HOST } : {}),
+          pgPort: env.JAMA_CONTACTS_PG_PORT,
+          pgDatabase: env.JAMA_CONTACTS_PG_DATABASE,
           intervalMs: env.CONTACT_SYNC_INTERVAL_MS,
           batchSize: env.CONTACT_SYNC_BATCH_SIZE,
           delayMs: env.CONTACT_SYNC_DELAY_MS,

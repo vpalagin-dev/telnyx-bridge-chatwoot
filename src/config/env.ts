@@ -48,8 +48,6 @@ const environmentSchema = z
     AI_LIVE_RECIPIENT_ALLOWLIST: z.preprocess(blank, z.string().default('')),
     CONTACT_SYNC_ENABLED: bool(false),
     JAMA_CONTACTS_DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
-    SUPABASE_URL: z.preprocess(blank, z.string().url().optional()),
-    SUPABASE_SERVICE_ROLE_KEY: z.preprocess(blank, z.string().min(1).optional()),
     CONTACT_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     CONTACT_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
     CONTACT_SYNC_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(100),
@@ -76,16 +74,8 @@ const environmentSchema = z
      if (env.AI_KNOWLEDGE_SOURCE === 'chatwoot' && !env.CHATWOOT_HELP_CENTER_SLUG.trim()) {
        context.addIssue({ code: 'custom', path: ['CHATWOOT_HELP_CENTER_SLUG'], message: 'required for Chatwoot knowledge source' });
      }
-    if (env.CONTACT_SYNC_ENABLED) {
-      const hasPostgres = Boolean(env.JAMA_CONTACTS_DATABASE_URL);
-      const hasRest = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
-      if (!hasPostgres && !hasRest) {
-        context.addIssue({
-          code: 'custom',
-          path: ['JAMA_CONTACTS_DATABASE_URL'],
-          message: 'CONTACT_SYNC_ENABLED requires JAMA_CONTACTS_DATABASE_URL or SUPABASE_URL with SUPABASE_SERVICE_ROLE_KEY',
-        });
-      }
+    if (env.CONTACT_SYNC_ENABLED && !env.JAMA_CONTACTS_DATABASE_URL) {
+      context.addIssue({ code: 'custom', path: ['JAMA_CONTACTS_DATABASE_URL'], message: 'required when CONTACT_SYNC_ENABLED=true' });
     }
   });
 
@@ -126,15 +116,13 @@ export type BridgeConfig = {
   aiOutbound?: { liveSmsApproved: boolean; recipientAllowlist: string[] };
   contactSync?: {
     enabled: boolean;
+    databaseUrl: string;
     intervalMs: number;
     batchSize: number;
     delayMs: number;
     schema: string;
     table: string;
-  } & (
-    | { source: 'postgres'; databaseUrl: string }
-    | { source: 'rest'; supabaseUrl: string; serviceRoleKey: string }
-  );
+  };
 };
 
 export class ConfigError extends Error {
@@ -151,32 +139,6 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
   const env = parsed.data;
   const allowlist = env.AI_LIVE_RECIPIENT_ALLOWLIST.split(',').map((value) => value.trim()).filter(Boolean);
   if (allowlist.some((value) => !e164.test(value))) throw new ConfigError(['AI_LIVE_RECIPIENT_ALLOWLIST']);
-
-  const contactSyncBase = {
-    intervalMs: env.CONTACT_SYNC_INTERVAL_MS,
-    batchSize: env.CONTACT_SYNC_BATCH_SIZE,
-    delayMs: env.CONTACT_SYNC_DELAY_MS,
-    schema: env.CONTACT_SYNC_SCHEMA,
-    table: env.CONTACT_SYNC_TABLE,
-  };
-  const contactSync: BridgeConfig['contactSync'] = !env.CONTACT_SYNC_ENABLED
-    ? undefined
-    : env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
-      ? {
-        enabled: true,
-        source: 'rest',
-        supabaseUrl: env.SUPABASE_URL.replace(/\/$/, ''),
-        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
-        ...contactSyncBase,
-      }
-      : env.JAMA_CONTACTS_DATABASE_URL
-        ? {
-          enabled: true,
-          source: 'postgres',
-          databaseUrl: env.JAMA_CONTACTS_DATABASE_URL,
-          ...contactSyncBase,
-        }
-        : undefined;
 
   return {
     environment: env.NODE_ENV,
@@ -226,6 +188,18 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       replyLimitWindowMs: env.AI_REPLY_LIMIT_WINDOW_MS,
     },
     aiOutbound: { liveSmsApproved: env.AI_LIVE_SMS_APPROVED, recipientAllowlist: allowlist },
-    ...(contactSync ? { contactSync } : {}),
+    ...(env.CONTACT_SYNC_ENABLED && env.JAMA_CONTACTS_DATABASE_URL
+      ? {
+        contactSync: {
+          enabled: true,
+          databaseUrl: env.JAMA_CONTACTS_DATABASE_URL,
+          intervalMs: env.CONTACT_SYNC_INTERVAL_MS,
+          batchSize: env.CONTACT_SYNC_BATCH_SIZE,
+          delayMs: env.CONTACT_SYNC_DELAY_MS,
+          schema: env.CONTACT_SYNC_SCHEMA,
+          table: env.CONTACT_SYNC_TABLE,
+        },
+      }
+      : {}),
   };
 }

@@ -17,7 +17,6 @@ import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-
 import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
 import { createContactSyncService, type ContactSyncService } from './contacts/contact-sync.js';
 import { createJamaContactsSource, type JamaContactsSource } from './contacts/jama-contacts-source.js';
-import { createSupabaseRestContactsSource } from './contacts/supabase-rest-contacts-source.js';
 import { PostgresContactSyncStore } from './persistence/postgres-contact-sync-store.js';
 import { createLogger } from './observability/logger.js';
 
@@ -108,18 +107,12 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   let jamaContactsSource: JamaContactsSource | undefined;
   let contactSyncStore: PostgresContactSyncStore | undefined;
   if (config.contactSync?.enabled) {
-    jamaContactsSource = config.contactSync.source === 'rest'
-      ? createSupabaseRestContactsSource({
-        supabaseUrl: config.contactSync.supabaseUrl,
-        serviceRoleKey: config.contactSync.serviceRoleKey,
-        schema: config.contactSync.schema,
-        table: config.contactSync.table,
-      })
-      : createJamaContactsSource({
-        pool: new Pool({ connectionString: config.contactSync.databaseUrl }),
-        schema: config.contactSync.schema,
-        table: config.contactSync.table,
-      });
+    const jamaPool = new Pool({ connectionString: config.contactSync.databaseUrl });
+    jamaContactsSource = createJamaContactsSource({
+      pool: jamaPool,
+      schema: config.contactSync.schema,
+      table: config.contactSync.table,
+    });
     contactSyncStore = new PostgresContactSyncStore(config.databaseUrl, pool);
     contactSync = createContactSyncService({
       source: jamaContactsSource,

@@ -2,7 +2,8 @@ import { loadConfig } from './config/env.js';
 import { RedisDispatch } from './persistence/redis-dispatch.js';
 import { createRuntimePipeline, type RuntimePipeline } from './runtime.js';
 import { runWorker } from './worker/process-receipt.js';
-import { describeJamaContactsTarget } from './contacts/jama-contacts-pool.js';
+import { bootstrapContactSync, type ContactSyncRuntime } from './contacts/bootstrap-contact-sync.js';
+import { describeJamaContactsTarget, jamaContactsPoolOptionsFromConfig } from './contacts/jama-contacts-pool.js';
 import { createLogger } from './observability/logger.js';
 
 const logger = createLogger();
@@ -17,31 +18,38 @@ export async function runWorkerRuntime(
 ): Promise<void> {
   let syncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
   let contactSyncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
+  let contactSyncRuntime: ContactSyncRuntime | undefined;
   try {
     await pipeline.receiptStore.initialize();
     await pipeline.operationalStore.initialize();
     await pipeline.knowledgeStore.initialize();
     if (pipeline.contactSyncStore) await pipeline.contactSyncStore.initialize();
 
-    if (pipeline.contactSync) {
-      const jamaTarget = describeJamaContactsTarget({
-        databaseUrl: pipeline.config.contactSync!.databaseUrl,
-        ...(pipeline.config.contactSync!.databasePassword ? { password: pipeline.config.contactSync!.databasePassword } : {}),
-        ...(pipeline.config.contactSync!.pgUser ? { user: pipeline.config.contactSync!.pgUser } : {}),
-        ...(pipeline.config.contactSync!.pgHost ? { host: pipeline.config.contactSync!.pgHost } : {}),
-        port: pipeline.config.contactSync!.pgPort,
-        database: pipeline.config.contactSync!.pgDatabase,
-      });
+    if (pipeline.contactSyncStore && pipeline.config.contactSync?.enabled) {
+      const poolOptions = jamaContactsPoolOptionsFromConfig(pipeline.config.contactSync);
+      const jamaTarget = await describeJamaContactsTarget(poolOptions);
       logger.info(
-        jamaTarget,
-        `jama contacts postgres target user=${jamaTarget.user ?? 'missing'} host=${jamaTarget.host ?? 'missing'}`,
+        {
+          ...jamaTarget,
+          jamaContactsPasswordConfigured: Boolean(pipeline.config.contactSync.databasePassword),
+        },
+        `jama contacts postgres target user=${jamaTarget.user ?? 'missing'} host=${jamaTarget.host ?? 'missing'} connectHost=${jamaTarget.connectHost ?? 'same'} passwordConfigured=${Boolean(pipeline.config.contactSync.databasePassword)}`,
       );
       try {
-        contactSyncHandle = pipeline.contactSync.start();
+        contactSyncRuntime = await bootstrapContactSync({
+          config: pipeline.config,
+          chatwoot: pipeline.chatwoot,
+          contactSyncStore: pipeline.contactSyncStore,
+        });
+        contactSyncHandle = contactSyncRuntime.contactSync.start();
         await contactSyncHandle.ready;
       } catch (error) {
         const errorName = error instanceof Error ? error.name : 'UnknownError';
-        logger.error({ component: 'contacts', event: 'initial_sync_failed', errorName }, 'initial contact sync failed; continuing worker');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(
+          { component: 'contacts', event: 'initial_sync_failed', errorName, errorMessage },
+          `initial contact sync failed: ${errorMessage}`,
+        );
       }
     }
 
@@ -80,7 +88,7 @@ export async function runWorkerRuntime(
   } finally {
     await contactSyncHandle?.stop().catch(() => undefined);
     await syncHandle?.stop().catch(() => undefined);
-    await pipeline.jamaContactsSource?.close().catch(() => undefined);
+    await contactSyncRuntime?.jamaContactsPool.end().catch(() => undefined);
     await redis.close().catch(() => undefined);
     await pipeline.pool.end().catch(() => undefined);
   }

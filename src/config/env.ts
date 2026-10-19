@@ -82,6 +82,13 @@ const environmentSchema = z
     if (env.CONTACT_SYNC_ENABLED && !env.JAMA_CONTACTS_DATABASE_URL) {
       context.addIssue({ code: 'custom', path: ['JAMA_CONTACTS_DATABASE_URL'], message: 'required when CONTACT_SYNC_ENABLED=true' });
     }
+    if (env.CONTACT_SYNC_ENABLED && env.JAMA_CONTACTS_DATABASE_URL && !env.JAMA_CONTACTS_DATABASE_PASSWORD) {
+      context.addIssue({
+        code: 'custom',
+        path: ['JAMA_CONTACTS_DATABASE_PASSWORD'],
+        message: 'required when CONTACT_SYNC_ENABLED=true (use Supabase database password, not API keys)',
+      });
+    }
   });
 
 export type BridgeConfig = {

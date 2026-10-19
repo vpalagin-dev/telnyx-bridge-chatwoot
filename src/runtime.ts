@@ -15,9 +15,8 @@ import type { KnowledgeStore } from './persistence/knowledge-store.js';
 import { createChatwootHelpCenterClient, type ChatwootHelpCenterClient } from './ai/chatwoot-knowledge.js';
 import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-provider.js';
 import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
-import { createContactSyncService, type ContactSyncService } from './contacts/contact-sync.js';
-import { createJamaContactsPool } from './contacts/jama-contacts-pool.js';
-import { createJamaContactsSource, type JamaContactsSource } from './contacts/jama-contacts-source.js';
+import type { ContactSyncService } from './contacts/contact-sync.js';
+import type { JamaContactsSource } from './contacts/jama-contacts-source.js';
 import { PostgresContactSyncStore } from './persistence/postgres-contact-sync-store.js';
 import { createLogger } from './observability/logger.js';
 
@@ -57,8 +56,6 @@ export type RuntimePipeline = {
   knowledgeStore: KnowledgeStore;
   knowledgeProvider: KnowledgeProvider;
   knowledgeSync: KnowledgeSyncService;
-  contactSync?: ContactSyncService;
-  jamaContactsSource?: JamaContactsSource;
   contactSyncStore?: PostgresContactSyncStore;
 };
 
@@ -104,33 +101,9 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     logger: createLogger(),
   });
 
-  let contactSync: ContactSyncService | undefined;
-  let jamaContactsSource: JamaContactsSource | undefined;
   let contactSyncStore: PostgresContactSyncStore | undefined;
   if (config.contactSync?.enabled) {
-    const jamaPool = createJamaContactsPool({
-      databaseUrl: config.contactSync.databaseUrl,
-      ...(config.contactSync.databasePassword ? { password: config.contactSync.databasePassword } : {}),
-      ...(config.contactSync.pgUser ? { user: config.contactSync.pgUser } : {}),
-      ...(config.contactSync.pgHost ? { host: config.contactSync.pgHost } : {}),
-      port: config.contactSync.pgPort,
-      database: config.contactSync.pgDatabase,
-    });
-    jamaContactsSource = createJamaContactsSource({
-      pool: jamaPool,
-      schema: config.contactSync.schema,
-      table: config.contactSync.table,
-    });
     contactSyncStore = new PostgresContactSyncStore(config.databaseUrl, pool);
-    contactSync = createContactSyncService({
-      source: jamaContactsSource,
-      store: contactSyncStore,
-      chatwoot,
-      batchSize: config.contactSync.batchSize,
-      intervalMs: config.contactSync.intervalMs,
-      delayMs: config.contactSync.delayMs,
-      logger: createLogger(),
-    });
   }
 
   return {
@@ -146,8 +119,6 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     knowledgeStore,
     knowledgeProvider,
     knowledgeSync,
-    ...(contactSync ? { contactSync } : {}),
-    ...(jamaContactsSource ? { jamaContactsSource } : {}),
     ...(contactSyncStore ? { contactSyncStore } : {}),
   };
 }

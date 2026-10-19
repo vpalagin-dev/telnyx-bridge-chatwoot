@@ -26,6 +26,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isChatwootRateLimited(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('429');
+}
+
+async function upsertWithRateLimitRetry(
+  chatwoot: ChatwootClient,
+  payload: Parameters<ChatwootClient['upsertCrmContact']>[0],
+  retryDelaysMs: number[],
+): Promise<Awaited<ReturnType<ChatwootClient['upsertCrmContact']>>> {
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await chatwoot.upsertCrmContact(payload);
+    } catch (error) {
+      if (!isChatwootRateLimited(error) || attempt === retryDelaysMs.length) throw error;
+      await sleep(retryDelaysMs[attempt] ?? 60_000);
+    }
+  }
+  throw new Error('Chatwoot upsert retry exhausted');
+}
+
 export function createContactSyncService(options: {
   source: JamaContactsSource;
   store: ContactSyncStore;
@@ -69,7 +89,7 @@ export function createContactSyncService(options: {
         continue;
       }
 
-      const contact = await options.chatwoot.upsertCrmContact(payload);
+      const contact = await upsertWithRateLimitRetry(options.chatwoot, payload, [2_000, 5_000, 15_000, 30_000, 60_000]);
       await options.store.saveRecord({
         sourceContactId: row.contactId,
         chatwootContactId: contact.id,

@@ -125,11 +125,7 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
       ?? (await this.findContactByPhone(payload.phone));
     if (existing) {
       await this.#updateCrmContact(existing.id, payload);
-      const refreshed =
-        (await this.findContactByIdentifier(payload.identifier))
-        ?? (await this.findContactByPhone(payload.phone));
-      if (!refreshed) throw new Error('Chatwoot contact missing after CRM update');
-      return refreshed;
+      return existing;
     }
     const body: Record<string, string | number> = {
       inbox_id: this.#options.inboxId,

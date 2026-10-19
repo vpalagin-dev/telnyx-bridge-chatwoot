@@ -103,7 +103,10 @@ export function createContactSyncService(options: {
       .catch((error: unknown) => {
         const errorName = error instanceof Error ? error.name : 'UnknownError';
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error({ code: 'contact_sync_failed', errorName, errorMessage }, 'contact sync failed');
+        logger.error(
+          { code: 'contact_sync_failed', errorName, errorMessage },
+          `contact sync failed: ${errorMessage}`,
+        );
       })
       .then(() => undefined);
     try {

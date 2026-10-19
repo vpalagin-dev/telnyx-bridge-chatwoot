@@ -16,6 +16,7 @@ import { createChatwootHelpCenterClient, type ChatwootHelpCenterClient } from '.
 import { createKnowledgeProvider, type KnowledgeProvider } from './ai/knowledge-provider.js';
 import { createKnowledgeSyncService, type KnowledgeSyncService } from './ai/knowledge-sync.js';
 import { createContactSyncService, type ContactSyncService } from './contacts/contact-sync.js';
+import { createJamaContactsPool } from './contacts/jama-contacts-pool.js';
 import { createJamaContactsSource, type JamaContactsSource } from './contacts/jama-contacts-source.js';
 import { PostgresContactSyncStore } from './persistence/postgres-contact-sync-store.js';
 import { createLogger } from './observability/logger.js';
@@ -107,10 +108,7 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   let jamaContactsSource: JamaContactsSource | undefined;
   let contactSyncStore: PostgresContactSyncStore | undefined;
   if (config.contactSync?.enabled) {
-    const jamaPool = new Pool({
-      connectionString: config.contactSync.databaseUrl,
-      ssl: { rejectUnauthorized: false },
-    });
+    const jamaPool = createJamaContactsPool(config.contactSync.databaseUrl);
     jamaContactsSource = createJamaContactsSource({
       pool: jamaPool,
       schema: config.contactSync.schema,

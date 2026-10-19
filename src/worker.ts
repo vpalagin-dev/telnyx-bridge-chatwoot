@@ -2,6 +2,7 @@ import { loadConfig } from './config/env.js';
 import { RedisDispatch } from './persistence/redis-dispatch.js';
 import { createRuntimePipeline, type RuntimePipeline } from './runtime.js';
 import { runWorker } from './worker/process-receipt.js';
+import { describeJamaContactsTarget } from './contacts/jama-contacts-pool.js';
 import { createLogger } from './observability/logger.js';
 
 const logger = createLogger();
@@ -23,6 +24,10 @@ export async function runWorkerRuntime(
     if (pipeline.contactSyncStore) await pipeline.contactSyncStore.initialize();
 
     if (pipeline.contactSync) {
+      logger.info(
+        describeJamaContactsTarget(pipeline.config.contactSync!.databaseUrl),
+        'jama contacts postgres target',
+      );
       try {
         contactSyncHandle = pipeline.contactSync.start();
         await contactSyncHandle.ready;

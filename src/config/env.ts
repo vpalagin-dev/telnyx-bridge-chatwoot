@@ -48,6 +48,7 @@ const environmentSchema = z
     AI_LIVE_RECIPIENT_ALLOWLIST: z.preprocess(blank, z.string().default('')),
     CONTACT_SYNC_ENABLED: bool(false),
     JAMA_CONTACTS_DATABASE_URL: z.preprocess(blank, z.string().url().optional()),
+    JAMA_CONTACTS_DATABASE_PASSWORD: z.preprocess(blank, z.string().min(1).optional()),
     CONTACT_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     CONTACT_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
     CONTACT_SYNC_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(100),
@@ -117,6 +118,7 @@ export type BridgeConfig = {
   contactSync?: {
     enabled: boolean;
     databaseUrl: string;
+    databasePassword?: string;
     intervalMs: number;
     batchSize: number;
     delayMs: number;
@@ -193,6 +195,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
         contactSync: {
           enabled: true,
           databaseUrl: env.JAMA_CONTACTS_DATABASE_URL,
+          ...(env.JAMA_CONTACTS_DATABASE_PASSWORD ? { databasePassword: env.JAMA_CONTACTS_DATABASE_PASSWORD } : {}),
           intervalMs: env.CONTACT_SYNC_INTERVAL_MS,
           batchSize: env.CONTACT_SYNC_BATCH_SIZE,
           delayMs: env.CONTACT_SYNC_DELAY_MS,

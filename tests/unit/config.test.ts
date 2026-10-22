@@ -91,13 +91,11 @@ describe('loadConfig', () => {
     expect(config.ai?.enabled).toBe(true);
   });
 
-  it('requires an allowlisted test recipient before live outbound can start', () => {
-    expect(() => loadConfig({ ...validEnvironment, OUTBOUND_MODE: 'live' })).toThrowError(
-      /TEST_RECIPIENT_NUMBER/,
-    );
+  it('allows live outbound without a test recipient allowlist', () => {
+    expect(loadConfig({ ...validEnvironment, OUTBOUND_MODE: 'live' }).outbound).toEqual({ mode: 'live' });
   });
 
-  it('loads live outbound only with an E.164 test recipient', () => {
+  it('loads live outbound with an optional E.164 test recipient allowlist', () => {
     const config = loadConfig({
       ...validEnvironment,
       OUTBOUND_MODE: 'live',

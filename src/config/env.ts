@@ -60,9 +60,6 @@ const environmentSchema = z
     CONTACT_SYNC_TABLE: z.string().regex(/^[a-z_][a-z0-9_]*$/i).default('contacts'),
   })
   .superRefine((env, context) => {
-    if (env.OUTBOUND_MODE === 'live' && !env.TEST_RECIPIENT_NUMBER) {
-      context.addIssue({ code: 'custom', path: ['TEST_RECIPIENT_NUMBER'], message: 'required' });
-    }
     if (env.AI_PROVIDER_MODE === 'live' && env.AI_LIVE_OPENAI_ENABLED && !env.OPENAI_API_KEY) {
       context.addIssue({ code: 'custom', path: ['OPENAI_API_KEY'], message: 'required' });
     }
@@ -102,7 +99,7 @@ export type BridgeConfig = {
   runtimeRole: 'web' | 'worker';
   chatwoot: { url: string; accountId: number; inboxId: number; apiToken: string; webhookSecret?: string };
   telnyx: { apiKey: string; publicKey?: string; senderNumber: string };
-  outbound: { mode: 'fake'; testRecipientNumber?: string } | { mode: 'live'; testRecipientNumber: string };
+  outbound: { mode: 'fake'; testRecipientNumber?: string } | { mode: 'live'; testRecipientNumber?: string };
   webhookToleranceSeconds: number;
   ai?: {
     enabled: boolean;
@@ -180,7 +177,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     },
     outbound:
       env.OUTBOUND_MODE === 'live'
-        ? { mode: 'live', testRecipientNumber: env.TEST_RECIPIENT_NUMBER! }
+        ? { mode: 'live', ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}) }
         : { mode: 'fake', ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}) },
     webhookToleranceSeconds: env.WEBHOOK_TOLERANCE_SECONDS,
     ai: {

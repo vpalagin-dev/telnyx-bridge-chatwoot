@@ -61,7 +61,11 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
   if (dependencies.outboundMode !== 'fake' && dependencies.outboundMode !== 'live') {
     throw new Error('OUTBOUND_MODE must be fake or live');
   }
-  if (dependencies.outboundMode === 'live' && phone !== dependencies.testRecipientNumber) {
+  if (
+    dependencies.outboundMode === 'live'
+    && dependencies.testRecipientNumber
+    && phone !== dependencies.testRecipientNumber
+  ) {
     return { outcome: 'recipient_not_allowlisted', actionId };
   }
 

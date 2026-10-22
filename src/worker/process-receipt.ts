@@ -69,7 +69,14 @@ export async function processReceipt(receipt: Receipt, deps: ReceiptProcessorDep
       process.stderr.write(`AI callback failed (${inbound.aiError.name}): ${inbound.aiError.message}\n`);
       logger.error({ component: 'ai', event: 'callback_failed', receiptId: receipt.receiptId, error: inbound.aiError }, 'AI callback failed after inbound creation');
     } else if (inbound.outcome === 'created' && inbound.aiResult) {
-      logger.info({ component: 'ai', event: 'post_inbound', outcome: inbound.aiResult.outcome, state: inbound.aiResult.state }, 'AI post-inbound result');
+      logger.info({
+        component: 'ai',
+        event: 'post_inbound',
+        outcome: inbound.aiResult.outcome,
+        state: inbound.aiResult.state,
+        aiDecisionId: inbound.aiResult.aiDecisionId,
+        chatwootConversationId: inbound.chatwootConversationId,
+      }, 'AI post-inbound result');
     }
     if (inbound.outcome === 'unknown_needs_review') {
       return { status: 'needs_review', reason: 'inbound pipeline reported ambiguous state', inbound };

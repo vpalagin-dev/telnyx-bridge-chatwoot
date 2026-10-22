@@ -48,6 +48,7 @@ export function renderBroadcastAdminPage(options: {
     .secondary { background: #374151; }
     .notice { background: #064e3b; border: 1px solid #059669; padding: 12px; border-radius: 8px; }
     .error { background: #7f1d1d; border: 1px solid #dc2626; padding: 12px; border-radius: 8px; }
+    .hint { font-size: 0.75rem; color: #9ca3af; margin-top: 6px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -55,8 +56,9 @@ export function renderBroadcastAdminPage(options: {
     <h1>Create SMS campaign</h1>
     ${notice}
     ${error}
-    <form method="post" action="/admin/broadcast">
+    <form id="campaign-form" method="post" action="/admin/broadcast">
       <input type="hidden" name="token" value="${escapeHtml(options.token)}" />
+      <input type="hidden" id="scheduled_at_utc" name="scheduled_at_utc" value="" />
       <label for="title">Title</label>
       <input id="title" name="title" maxlength="120" placeholder="Please enter the title of campaign" value="${escapeHtml(options.values?.title ?? '')}" required />
       <label for="message">Message</label>
@@ -68,6 +70,7 @@ export function renderBroadcastAdminPage(options: {
       <select id="label" name="label">${labelOptions}</select>
       <label for="scheduled_at">Scheduled time</label>
       <input id="scheduled_at" name="scheduled_at" type="datetime-local" value="${escapeHtml(options.values?.scheduledAt ?? '')}" required />
+      <p class="hint" id="tz-hint"></p>
       <div class="actions">
         <button type="reset" class="secondary">Clear</button>
         <button type="submit" class="primary">Create</button>
@@ -81,11 +84,21 @@ export function renderBroadcastAdminPage(options: {
     message.addEventListener('input', sync);
     sync();
     const scheduled = document.getElementById('scheduled_at');
+    const tzHint = document.getElementById('tz-hint');
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    tzHint.textContent = 'Time is in your local timezone (' + timeZone + '). It is converted to UTC when you click Create.';
     if (!scheduled.value) {
       const now = new Date();
       now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
       scheduled.value = now.toISOString().slice(0, 16);
     }
+    document.getElementById('campaign-form').addEventListener('submit', () => {
+      const localValue = scheduled.value;
+      if (!localValue) return;
+      const asLocal = new Date(localValue);
+      if (Number.isNaN(asLocal.getTime())) return;
+      document.getElementById('scheduled_at_utc').value = asLocal.toISOString();
+    });
   </script>
 </body>
 </html>`;

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { BridgeConfig } from '../config/env.js';
 import { renderBroadcastAdminPage } from './admin-page.js';
+import { parseBroadcastScheduledAt } from './scheduled-at.js';
 import type { BroadcastStore, ChatwootAudienceClient } from './types.js';
 
 function frameAncestors(config: BridgeConfig): string {
@@ -74,7 +75,12 @@ export function registerBroadcastAdminRoutes(
     const message = body?.message?.trim() ?? '';
     const label = body?.label?.trim() || null;
     const scheduledRaw = body?.scheduled_at?.trim() ?? '';
-    const scheduledAt = scheduledRaw ? new Date(scheduledRaw) : new Date();
+    const scheduledAtUtc = body?.scheduled_at_utc?.trim();
+    const scheduledAt =
+      parseBroadcastScheduledAt({
+        scheduled_at: scheduledRaw,
+        ...(scheduledAtUtc ? { scheduled_at_utc: scheduledAtUtc } : {}),
+      }) ?? new Date();
     const maxLen = deps.config.broadcast!.messageMaxLength;
 
     if (!title || !message || Number.isNaN(scheduledAt.getTime())) {

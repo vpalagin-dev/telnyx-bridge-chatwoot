@@ -160,8 +160,59 @@ describe('processChatwootOutbound', () => {
     expect(telnyx.calls).toHaveLength(0);
   });
 
+  it('sends a campaign message when the recipient phone is in the webhook payload', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const telnyx = new FakeTelnyx();
+    const event = Object.assign(fixture(), {
+      campaign_id: 123,
+      conversation: {
+        id: 20,
+        meta: { sender: { phone_number: '+14155552671' } },
+      },
+    });
+
+    const result = await processChatwootOutbound(event, {
+      store,
+      telnyx,
+      accountId: 1,
+      inboxId: 2,
+      senderNumber: '+15551234567',
+      outboundMode: 'live',
+      testRecipientNumber: '+14155552671',
+    });
+
+    expect(result).toEqual({ outcome: 'sent', actionId: '9001', telnyxMessageId: 'telnyx-message-1' });
+    expect(store.getPhoneForConversation(20)).toBe('+14155552671');
+    expect(telnyx.calls).toHaveLength(1);
+  });
+
+  it('resolves the recipient from Chatwoot API when binding is missing', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const telnyx = new FakeTelnyx();
+    const chatwoot = {
+      async getConversationContactPhone(conversationId: number) {
+        return conversationId === 20 ? '+14155552671' : null;
+      },
+    };
+
+    const result = await processChatwootOutbound(fixture(), {
+      store,
+      telnyx,
+      chatwoot: chatwoot as import('../../src/chatwoot/client.js').ChatwootClient,
+      accountId: 1,
+      inboxId: 2,
+      senderNumber: '+15551234567',
+      outboundMode: 'live',
+      testRecipientNumber: '+14155552671',
+    });
+
+    expect(result.outcome).toBe('sent');
+    expect(store.getPhoneForConversation(20)).toBe('+14155552671');
+  });
+
   it.each([
-    ['campaign', { campaign_id: 123 }],
     ['automation', { automation_rule_id: 456 }],
     ['template', { template_params: { name: 'promo' } }],
     ['attachment', { attachments: [{ id: 1 }] }],

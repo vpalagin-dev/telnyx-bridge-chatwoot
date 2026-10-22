@@ -25,7 +25,7 @@ describe('loadConfig', () => {
     expect(config.databaseUrl).toBe('postgresql://test-only');
     expect(config.persistence).toEqual({ redisUrl: undefined, redisPrefix: 'telnyx-bridge:' });
     expect(config.runtimeRole).toBe('web');
-    expect(config.outbound).toEqual({ mode: 'fake' });
+    expect(config.outbound).toEqual({ mode: 'fake', campaignDelayMs: 500 });
     expect(config.ai).toMatchObject({
       debounceMs: 15000,
       replyLimit: 10,
@@ -92,7 +92,7 @@ describe('loadConfig', () => {
   });
 
   it('allows live outbound without a test recipient allowlist', () => {
-    expect(loadConfig({ ...validEnvironment, OUTBOUND_MODE: 'live' }).outbound).toEqual({ mode: 'live' });
+    expect(loadConfig({ ...validEnvironment, OUTBOUND_MODE: 'live' }).outbound).toEqual({ mode: 'live', campaignDelayMs: 500 });
   });
 
   it('loads live outbound with an optional E.164 test recipient allowlist', () => {
@@ -102,7 +102,7 @@ describe('loadConfig', () => {
       TEST_RECIPIENT_NUMBER: '+14155552671',
     });
 
-    expect(config.outbound).toEqual({ mode: 'live', testRecipientNumber: '+14155552671' });
+    expect(config.outbound).toEqual({ mode: 'live', campaignDelayMs: 500, testRecipientNumber: '+14155552671' });
   });
 
   it('treats blank optional secrets as unset in local fake mode', () => {
@@ -115,7 +115,7 @@ describe('loadConfig', () => {
 
     expect(config.chatwoot.webhookSecret).toBeUndefined();
     expect(config.telnyx.publicKey).toBeUndefined();
-    expect(config.outbound).toEqual({ mode: 'fake' });
+    expect(config.outbound).toEqual({ mode: 'fake', campaignDelayMs: 500 });
   });
 
   it('allows loopback development to start without webhook authentication', () => {

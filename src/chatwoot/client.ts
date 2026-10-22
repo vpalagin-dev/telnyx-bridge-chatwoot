@@ -14,4 +14,5 @@ export interface ChatwootClient {
   createConversation(contactId: number, sourceId: string): Promise<ChatwootConversation>;
   reopenConversation(conversationId: number): Promise<void>;
   createIncomingMessage(conversationId: number, content: string): Promise<{ id: number }>;
+  getConversationContactPhone(conversationId: number): Promise<string | null>;
 }

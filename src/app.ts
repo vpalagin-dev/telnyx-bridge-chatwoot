@@ -59,7 +59,17 @@ export function buildApp(d?: AppDependencies): FastifyInstance {
     let payload: unknown;
     try { payload = JSON.parse(raw); } catch { return reply.code(400).send({ error: 'invalid_payload' }); }
     try {
-      const result = await processChatwootOutbound(payload, { store: d.store, telnyx: d.telnyx, accountId: d.config.chatwoot.accountId, inboxId: d.config.chatwoot.inboxId, senderNumber: d.config.telnyx.senderNumber, outboundMode: d.config.outbound.mode, ...(d.config.outbound.testRecipientNumber ? { testRecipientNumber: d.config.outbound.testRecipientNumber } : {}) });
+      const result = await processChatwootOutbound(payload, {
+        store: d.store,
+        telnyx: d.telnyx,
+        chatwoot: d.chatwoot,
+        accountId: d.config.chatwoot.accountId,
+        inboxId: d.config.chatwoot.inboxId,
+        senderNumber: d.config.telnyx.senderNumber,
+        outboundMode: d.config.outbound.mode,
+        ...(d.config.outbound.testRecipientNumber ? { testRecipientNumber: d.config.outbound.testRecipientNumber } : {}),
+        ...(d.config.outbound.campaignDelayMs != null ? { campaignDelayMs: d.config.outbound.campaignDelayMs } : {}),
+      });
       return reply.code(200).send(result);
     } catch (e) { if (e instanceof ZodError) return reply.code(400).send({ error: 'invalid_payload' }); return reply.code(503).send({ error: 'processing_failed' }); }
   });

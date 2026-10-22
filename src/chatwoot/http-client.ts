@@ -180,6 +180,21 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
     return { id: message.id };
   }
 
+  async getConversationContactPhone(conversationId: number): Promise<string | null> {
+    try {
+      const data = await this.#request(
+        `/api/v1/accounts/${this.#options.accountId}/conversations/${conversationId}`,
+      );
+      const meta = data?.meta as Record<string, unknown> | undefined;
+      const sender = meta?.sender as Record<string, unknown> | undefined;
+      const raw = sender?.phone_number ?? sender?.phone;
+      if (typeof raw !== 'string' || !raw.trim()) return null;
+      return normalizePhone(raw);
+    } catch {
+      return null;
+    }
+  }
+
   async createAiHistoryMessage(conversationId: number, text: string, metadata: AiHistoryMetadata): Promise<{ id: number }> {
     const message = await this.#request(
       `/api/v1/accounts/${this.#options.accountId}/conversations/${conversationId}/messages`,

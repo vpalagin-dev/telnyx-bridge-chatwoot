@@ -39,6 +39,9 @@ class FakeChatwoot implements ChatwootClient {
     this.calls.push(`create-message:${conversationId}:${content}`);
     return { id: 30 };
   }
+  async getConversationContactPhone() {
+    return null;
+  }
 }
 
 const stores: FakeOperationalStore[] = [];

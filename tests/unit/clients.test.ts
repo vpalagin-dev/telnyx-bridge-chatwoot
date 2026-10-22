@@ -67,6 +67,18 @@ describe('HttpChatwootClient', () => {
     expect(fetcher.mock.calls[0]?.[0]).toContain('/api/v1/accounts/1/contacts/10/conversations');
   });
 
+  it('reads the contact phone from a conversation show response', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      meta: { sender: { phone_number: '+37360000000' } },
+    }));
+    const client = new HttpChatwootClient({
+      baseUrl: 'http://localhost:3001', accountId: 1, inboxId: 2, apiToken: 'test-token', fetcher,
+    });
+
+    await expect(client.getConversationContactPhone(20)).resolves.toBe('+37360000000');
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/api/v1/accounts/1/conversations/20');
+  });
+
   it('attaches the JAMA inbox when a phone match exists without that inbox binding', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({

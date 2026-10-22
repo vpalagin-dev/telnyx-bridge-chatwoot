@@ -24,6 +24,7 @@ const environmentSchema = z
     TELNYX_SENDER_NUMBER: z.string().regex(e164),
     OUTBOUND_MODE: z.preprocess(blank, z.enum(['fake', 'live']).default('fake')),
     TEST_RECIPIENT_NUMBER: z.preprocess(blank, z.string().regex(e164).optional()),
+    OUTBOUND_CAMPAIGN_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(500),
     WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().positive().default(300),
     AI_ENABLED: bool(false),
     AI_PROVIDER_MODE: z.enum(['fake', 'live']).default('fake'),
@@ -99,7 +100,9 @@ export type BridgeConfig = {
   runtimeRole: 'web' | 'worker';
   chatwoot: { url: string; accountId: number; inboxId: number; apiToken: string; webhookSecret?: string };
   telnyx: { apiKey: string; publicKey?: string; senderNumber: string };
-  outbound: { mode: 'fake'; testRecipientNumber?: string } | { mode: 'live'; testRecipientNumber?: string };
+  outbound:
+    | { mode: 'fake'; testRecipientNumber?: string; campaignDelayMs?: number }
+    | { mode: 'live'; testRecipientNumber?: string; campaignDelayMs?: number };
   webhookToleranceSeconds: number;
   ai?: {
     enabled: boolean;
@@ -177,8 +180,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     },
     outbound:
       env.OUTBOUND_MODE === 'live'
-        ? { mode: 'live', ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}) }
-        : { mode: 'fake', ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}) },
+        ? {
+          mode: 'live',
+          campaignDelayMs: env.OUTBOUND_CAMPAIGN_DELAY_MS,
+          ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}),
+        }
+        : {
+          mode: 'fake',
+          campaignDelayMs: env.OUTBOUND_CAMPAIGN_DELAY_MS,
+          ...(env.TEST_RECIPIENT_NUMBER ? { testRecipientNumber: env.TEST_RECIPIENT_NUMBER } : {}),
+        },
     webhookToleranceSeconds: env.WEBHOOK_TOLERANCE_SECONDS,
     ai: {
       enabled: env.AI_ENABLED,

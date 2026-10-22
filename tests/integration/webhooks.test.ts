@@ -18,6 +18,7 @@ class FakeChatwoot implements ChatwootClient {
   async createConversation() { return { id: 20, status: 'open' as const }; }
   async reopenConversation() {}
   async createIncomingMessage() { this.messageCalls += 1; return { id: 30 }; }
+  async getConversationContactPhone() { return null; }
 }
 
 class FakeTelnyx implements TelnyxClient {

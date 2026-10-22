@@ -51,7 +51,7 @@ describe('LiveAiTelnyxDispatcher', () => {
       to: '+14155559999',
       text: 'Hello',
       aiDecisionId: 'dec-2',
-    })).rejects.toThrow(/AI live SMS gate blocked/);
+    })).rejects.toThrow(/AI_LIVE_RECIPIENT_ALLOWLIST/);
     expect(sendSms).not.toHaveBeenCalled();
   });
 });

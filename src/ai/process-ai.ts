@@ -154,9 +154,19 @@ export async function processAiPostInbound(
     }
     audit('answered', { aiDecisionId: decisionId, conversationId: input.conversationId, telnyxMessageId: submission.telnyxMessageId });
     return { outcome: 'answered', aiDecisionId: decisionId, state: 'ai_active' };
-  } catch {
+  } catch (error) {
+    const submitError = error instanceof Error ? error.message : String(error);
     await d.store.markAiDecisionUnknown(decisionId, 'telnyx_submission');
-    audit('unknown_needs_review', { aiDecisionId: decisionId, conversationId: input.conversationId, reason: 'telnyx_submission' });
+    audit('unknown_needs_review', {
+      aiDecisionId: decisionId,
+      conversationId: input.conversationId,
+      reason: 'telnyx_submission',
+      submitError,
+    });
+    logger.error(
+      { component: 'ai', event: 'telnyx_submit_failed', aiDecisionId: decisionId, conversationId: input.conversationId, submitError },
+      'AI Telnyx submit failed',
+    );
     return { outcome: 'unknown_needs_review', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 }

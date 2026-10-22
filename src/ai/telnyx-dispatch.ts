@@ -34,16 +34,18 @@ export class LiveAiTelnyxDispatcher implements AiTelnyxDispatcher {
   ) {}
 
   async submit(input: AiTelnyxDispatchInput): Promise<AiTelnyxDispatchResult> {
-    if (
-      !this.cfg.aiOutbound?.liveSmsApproved
-      || this.cfg.outbound.mode !== 'live'
-      || !recipientAllowed(this.cfg, input.to)
-    ) {
-      throw new Error('AI live SMS gate blocked');
+    if (!this.cfg.aiOutbound?.liveSmsApproved) {
+      throw new Error('AI live SMS gate: AI_LIVE_SMS_APPROVED is false');
+    }
+    if (this.cfg.outbound.mode !== 'live') {
+      throw new Error('AI live SMS gate: OUTBOUND_MODE is not live');
+    }
+    if (!recipientAllowed(this.cfg, input.to)) {
+      throw new Error('AI live SMS gate: recipient not on AI_LIVE_RECIPIENT_ALLOWLIST');
     }
     const actionId = `ai-${input.aiDecisionId}`;
     if (!(await this.store.claimOutboundAction(actionId))) {
-      throw new Error('AI action already claimed');
+      throw new Error('AI live SMS gate: outbound action already claimed');
     }
     try {
       const response = await this.client.sendSms({ from: input.from, to: input.to, text: input.text });

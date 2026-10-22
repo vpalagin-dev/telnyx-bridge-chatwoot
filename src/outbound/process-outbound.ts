@@ -84,7 +84,7 @@ export async function processChatwootOutbound(input: unknown, dependencies: Depe
     conversationId: event.conversation.id,
     event: rawEvent,
     store: dependencies.store,
-    chatwoot: dependencies.chatwoot,
+    ...(dependencies.chatwoot ? { chatwoot: dependencies.chatwoot } : {}),
   });
   if (!phone) return { outcome: 'recipient_mapping_needs_review', actionId };
   if (await dependencies.store.isSuppressed(phone)) return { outcome: 'suppressed', actionId };

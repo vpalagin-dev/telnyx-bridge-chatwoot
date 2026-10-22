@@ -143,10 +143,17 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
 
   async findConversation(contactId: number): Promise<ChatwootConversation | null> {
     const data = await this.#request(
-      `/api/v1/accounts/${this.#options.accountId}/conversations?inbox_id=${this.#options.inboxId}&contact_id=${contactId}&status=all`,
+      `/api/v1/accounts/${this.#options.accountId}/contacts/${contactId}/conversations`,
     );
-    const conversations = Array.isArray(data.data?.payload) ? data.data.payload : Array.isArray(data.payload) ? data.payload : [];
-    const conversation = conversations[0];
+    const conversations = Array.isArray(data.payload)
+      ? data.payload
+      : Array.isArray(data.data?.payload)
+        ? data.data.payload
+        : [];
+    const conversation = conversations.find((entry: { inbox_id?: number; inbox?: { id?: number } }) => {
+      const inboxId = entry.inbox_id ?? entry.inbox?.id;
+      return Number(inboxId) === this.#options.inboxId;
+    });
     return conversation ? { id: conversation.id, status: conversation.status } : null;
   }
 

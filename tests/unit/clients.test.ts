@@ -22,6 +22,7 @@ describe('HttpChatwootClient', () => {
 
     await expect(client.findContactByPhone('+14155552671')).resolves.toEqual({ id: 10, sourceId: 'source-10' });
     await expect(client.findConversation(10)).resolves.toBeNull();
+    expect(fetcher.mock.calls.some((call) => String(call[0]).includes('/api/v1/accounts/1/contacts/10/conversations'))).toBe(true);
     await expect(client.createConversation(10, 'source-10')).resolves.toEqual({ id: 20, status: 'open' });
     await expect(client.createIncomingMessage(20, 'fixture text')).resolves.toEqual({ id: 30 });
 
@@ -49,6 +50,21 @@ describe('HttpChatwootClient', () => {
       id: 10,
       sourceId: 'd944b765-98a7-4f84-afe2-276647f5de3a',
     });
+  });
+
+  it('finds the JAMA SMS conversation for the contact, not the first inbox thread', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      payload: [
+        { id: 99, inbox_id: 2, status: 'open' },
+        { id: 20, inbox_id: 3, status: 'open' },
+      ],
+    }));
+    const client = new HttpChatwootClient({
+      baseUrl: 'http://localhost:3001', accountId: 1, inboxId: 3, apiToken: 'test-token', fetcher,
+    });
+
+    await expect(client.findConversation(10)).resolves.toEqual({ id: 20, status: 'open' });
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/api/v1/accounts/1/contacts/10/conversations');
   });
 
   it('attaches the JAMA inbox when a phone match exists without that inbox binding', async () => {

@@ -5,6 +5,7 @@ import { runWorker } from './worker/process-receipt.js';
 import { bootstrapContactSync, type ContactSyncRuntime } from './contacts/bootstrap-contact-sync.js';
 import { describeJamaContactsTarget, jamaContactsPoolOptionsFromConfig } from './contacts/jama-contacts-pool.js';
 import { createLogger } from './observability/logger.js';
+import { startBroadcastScheduler } from './broadcast/run-broadcast.js';
 
 const logger = createLogger();
 
@@ -19,6 +20,7 @@ export async function runWorkerRuntime(
   let syncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
   let contactSyncHandle: { stop(): Promise<void>; ready?: Promise<void> } | undefined;
   let contactSyncRuntime: ContactSyncRuntime | undefined;
+  let broadcastScheduler: { stop(): void } | undefined;
   try {
     await pipeline.receiptStore.initialize();
     await pipeline.operationalStore.initialize();
@@ -71,6 +73,16 @@ export async function runWorkerRuntime(
       }
     }
 
+    if (pipeline.broadcastStore && pipeline.broadcastAudience) {
+      broadcastScheduler = startBroadcastScheduler({
+        config: pipeline.config,
+        store: pipeline.broadcastStore,
+        audience: pipeline.broadcastAudience,
+        operationalStore: pipeline.operationalStore,
+        telnyx: pipeline.telnyx,
+      });
+    }
+
     await run({ workerId: `worker-${process.pid}` }, {
       store: pipeline.receiptStore,
       dispatch: redis,
@@ -86,6 +98,7 @@ export async function runWorkerRuntime(
       },
     });
   } finally {
+    broadcastScheduler?.stop();
     await contactSyncHandle?.stop().catch(() => undefined);
     await syncHandle?.stop().catch(() => undefined);
     await contactSyncRuntime?.jamaContactsPool.end().catch(() => undefined);

@@ -133,6 +133,25 @@ CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.contact_sync_state (
   synced_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.broadcast_campaigns (
+  campaign_id uuid PRIMARY KEY,
+  title text NOT NULL,
+  message text NOT NULL,
+  inbox_id bigint NOT NULL,
+  label text,
+  scheduled_at timestamptz NOT NULL,
+  status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','running','completed','failed')),
+  sent_count integer NOT NULL DEFAULT 0,
+  skipped_count integer NOT NULL DEFAULT 0,
+  failed_count integer NOT NULL DEFAULT 0,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  started_at timestamptz,
+  completed_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS broadcast_campaigns_due_idx ON ${BRIDGE_SCHEMA}.broadcast_campaigns (scheduled_at) WHERE status = 'scheduled';
+
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ADD COLUMN IF NOT EXISTS result_code text;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ALTER COLUMN status SET DEFAULT 'pending';
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS published_at timestamptz;

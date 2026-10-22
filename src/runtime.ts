@@ -19,6 +19,9 @@ import type { ContactSyncService } from './contacts/contact-sync.js';
 import type { JamaContactsSource } from './contacts/jama-contacts-source.js';
 import { PostgresContactSyncStore } from './persistence/postgres-contact-sync-store.js';
 import { createLogger } from './observability/logger.js';
+import { createChatwootAudienceClient } from './broadcast/chatwoot-audience.js';
+import { PostgresBroadcastStore } from './broadcast/postgres-broadcast-store.js';
+import type { BroadcastStore, ChatwootAudienceClient } from './broadcast/types.js';
 
 const defaults = (c: BridgeConfig): BridgeConfig => ({
   ...c,
@@ -57,6 +60,8 @@ export type RuntimePipeline = {
   knowledgeProvider: KnowledgeProvider;
   knowledgeSync: KnowledgeSyncService;
   contactSyncStore?: PostgresContactSyncStore;
+  broadcastStore?: BroadcastStore;
+  broadcastAudience?: ChatwootAudienceClient;
 };
 
 export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
@@ -106,6 +111,15 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     contactSyncStore = new PostgresContactSyncStore(config.databaseUrl, pool);
   }
 
+  const broadcastStore = config.broadcast?.enabled ? new PostgresBroadcastStore(config.databaseUrl, pool) : undefined;
+  const broadcastAudience = config.broadcast?.enabled
+    ? createChatwootAudienceClient({
+      baseUrl: config.chatwoot.url,
+      accountId: config.chatwoot.accountId,
+      apiToken: config.chatwoot.apiToken,
+    })
+    : undefined;
+
   return {
     config,
     pool,
@@ -120,6 +134,8 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     knowledgeProvider,
     knowledgeSync,
     ...(contactSyncStore ? { contactSyncStore } : {}),
+    ...(broadcastStore ? { broadcastStore } : {}),
+    ...(broadcastAudience ? { broadcastAudience } : {}),
   };
 }
 
@@ -132,6 +148,9 @@ export function buildRuntime(raw: BridgeConfig) {
     telnyx: pipeline.telnyx,
     ai: { openai: pipeline.openai, history: pipeline.history, telnyx: pipeline.aiTelnyx },
     receiptAdapter: pipeline.receiptStore,
+    ...(pipeline.broadcastStore && pipeline.broadcastAudience
+      ? { broadcast: { store: pipeline.broadcastStore, audience: pipeline.broadcastAudience } }
+      : {}),
   });
   app.addHook('onReady', async () => {
     await pipeline.receiptStore.initialize();

@@ -59,6 +59,11 @@ const environmentSchema = z
     CONTACT_SYNC_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(100),
     CONTACT_SYNC_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]*$/i).default('jama'),
     CONTACT_SYNC_TABLE: z.string().regex(/^[a-z_][a-z0-9_]*$/i).default('contacts'),
+    BROADCAST_ENABLED: bool(false),
+    BROADCAST_ADMIN_TOKEN: z.preprocess(blank, z.string().min(16).optional()),
+    BROADCAST_INBOX_DISPLAY_NAME: z.string().min(1).default('JAMA SMS'),
+    BROADCAST_MESSAGE_MAX_LENGTH: z.coerce.number().int().positive().max(1600).default(200),
+    BROADCAST_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(500),
   })
   .superRefine((env, context) => {
     if (env.AI_PROVIDER_MODE === 'live' && env.AI_LIVE_OPENAI_ENABLED && !env.OPENAI_API_KEY) {
@@ -86,6 +91,9 @@ const environmentSchema = z
         path: ['JAMA_CONTACTS_DATABASE_PASSWORD'],
         message: 'required when CONTACT_SYNC_ENABLED=true (use Supabase database password, not API keys)',
       });
+    }
+    if (env.BROADCAST_ENABLED && !env.BROADCAST_ADMIN_TOKEN) {
+      context.addIssue({ code: 'custom', path: ['BROADCAST_ADMIN_TOKEN'], message: 'required when BROADCAST_ENABLED=true' });
     }
   });
 
@@ -139,6 +147,13 @@ export type BridgeConfig = {
     delayMs: number;
     schema: string;
     table: string;
+  };
+  broadcast?: {
+    enabled: boolean;
+    adminToken: string;
+    inboxDisplayName: string;
+    messageMaxLength: number;
+    delayMs: number;
   };
 };
 
@@ -228,6 +243,17 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
           delayMs: env.CONTACT_SYNC_DELAY_MS,
           schema: env.CONTACT_SYNC_SCHEMA,
           table: env.CONTACT_SYNC_TABLE,
+        },
+      }
+      : {}),
+    ...(env.BROADCAST_ENABLED && env.BROADCAST_ADMIN_TOKEN
+      ? {
+        broadcast: {
+          enabled: true,
+          adminToken: env.BROADCAST_ADMIN_TOKEN,
+          inboxDisplayName: env.BROADCAST_INBOX_DISPLAY_NAME,
+          messageMaxLength: env.BROADCAST_MESSAGE_MAX_LENGTH,
+          delayMs: env.BROADCAST_DELAY_MS,
         },
       }
       : {}),

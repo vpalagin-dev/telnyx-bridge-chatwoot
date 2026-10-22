@@ -9,6 +9,8 @@ import { debugTelnyxWebhook, verifyChatwootWebhook, verifyTelnyxWebhook } from '
 import type { TelnyxClient } from './telnyx/client.js';
 import type { OpenAiAdapter, AiTelnyxDispatcher, ChatwootAiHistoryWriter } from './ai/types.js';
 import { buildPostInboundAiHook } from './ai/process-ai.js';
+import { registerBroadcastAdminRoutes } from './broadcast/register-admin-routes.js';
+import type { BroadcastStore, ChatwootAudienceClient } from './broadcast/types.js';
 
 type ReceiptAdapter = { insertReceipt(input: { provider: string; providerEventId: string; rawPayload: unknown }): Promise<{ inserted: boolean; receiptId: string }> };
 type AppDependencies = {
@@ -18,6 +20,7 @@ type AppDependencies = {
   telnyx: TelnyxClient;
   ai?: { openai: OpenAiAdapter; history: ChatwootAiHistoryWriter; telnyx: AiTelnyxDispatcher };
   receiptAdapter?: ReceiptAdapter;
+  broadcast?: { store: BroadcastStore; audience: ChatwootAudienceClient };
 };
 const telnyxInboundSchema = z.object({ data: z.object({ id: z.string().min(1), event_type: z.string().min(1), occurred_at: z.unknown().optional(), record_type: z.unknown().optional(), payload: z.object({}).passthrough() }).passthrough() });
 const header = (v: string | string[] | undefined) => Array.isArray(v) ? v[0] : v;
@@ -73,6 +76,13 @@ export function buildApp(d?: AppDependencies): FastifyInstance {
       return reply.code(200).send(result);
     } catch (e) { if (e instanceof ZodError) return reply.code(400).send({ error: 'invalid_payload' }); return reply.code(503).send({ error: 'processing_failed' }); }
   });
+  if (d.broadcast && d.config.broadcast?.enabled) {
+    registerBroadcastAdminRoutes(app, {
+      config: d.config,
+      store: d.broadcast.store,
+      audience: d.broadcast.audience,
+    });
+  }
   return app;
 }
 

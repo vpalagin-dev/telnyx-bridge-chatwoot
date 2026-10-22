@@ -69,6 +69,7 @@ export async function processReceipt(receipt: Receipt, deps: ReceiptProcessorDep
       process.stderr.write(`AI callback failed (${inbound.aiError.name}): ${inbound.aiError.message}\n`);
       logger.error({ component: 'ai', event: 'callback_failed', receiptId: receipt.receiptId, error: inbound.aiError }, 'AI callback failed after inbound creation');
     } else if (inbound.outcome === 'created' && inbound.aiResult) {
+      // Extra ids help correlate Railway logs with telnyx_bridge.ai_decisions rows.
       logger.info({
         component: 'ai',
         event: 'post_inbound',

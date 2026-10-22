@@ -125,7 +125,12 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
       ?? (await this.findContactByPhone(payload.phone));
     if (existing) {
       await this.#updateCrmContact(existing.id, payload);
-      return existing;
+      return this.#ensureInboxBinding({
+        id: existing.id,
+        contact_inboxes: existing.sourceId
+          ? [{ inbox_id: this.#options.inboxId, source_id: existing.sourceId }]
+          : [],
+      });
     }
     const body: Record<string, string | number> = {
       inbox_id: this.#options.inboxId,

@@ -79,6 +79,33 @@ describe('HttpChatwootClient', () => {
     expect(fetcher.mock.calls[0]?.[0]).toContain('/api/v1/accounts/1/conversations/20');
   });
 
+  it('upsertCrmContact updates CRM fields and ensures the configured SMS inbox binding', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({
+        payload: [{
+          id: 7,
+          identifier: '90001',
+          phone_number: '+14155552671',
+          contact_inboxes: [],
+        }],
+      }))
+      .mockResolvedValueOnce(response({ source_id: 'jama-inbox-src', inbox: { id: 2 } }))
+      .mockResolvedValueOnce(response({}));
+    const client = new HttpChatwootClient({
+      baseUrl: 'http://localhost:3001', accountId: 1, inboxId: 2, apiToken: 'test-token', fetcher,
+    });
+
+    await expect(client.upsertCrmContact({
+      identifier: '90001',
+      phone: '+14155552671',
+      name: 'Campaign Contact',
+    })).resolves.toEqual({ id: 7, sourceId: 'jama-inbox-src' });
+
+    expect(fetcher.mock.calls[1]?.[0]).toContain('/api/v1/accounts/1/contacts/7/contact_inboxes');
+    expect(fetcher.mock.calls[2]?.[0]).toContain('/api/v1/accounts/1/contacts/7');
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({ method: 'PUT' });
+  });
+
   it('attaches the JAMA inbox when a phone match exists without that inbox binding', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({

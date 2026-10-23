@@ -12,8 +12,9 @@ describe('loadAmaSystemPrompt', () => {
     const result = await loadAmaSystemPrompt({
       path: 'specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md',
     });
-    expect(result).toContain('You are Ama');
-    expect(result).toContain('Never AMA');
+    expect(result).toContain('Your name is Ama');
+    expect(result).toContain('Version 1.2');
+    expect(result).toContain('approved knowledge');
   });
 
   it('prefers inline override over file', async () => {

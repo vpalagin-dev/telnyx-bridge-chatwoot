@@ -37,6 +37,8 @@ const defaults = (c: BridgeConfig): BridgeConfig => ({
     safeFallbackText: "I'm not sure about that. Let me get someone from the JAMA team to help you.",
     escalationEnabled: true,
     systemPromptPath: 'specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md',
+    conversationHistoryEnabled: true,
+    conversationHistoryMaxMessages: 20,
   },
   aiOutbound: c.aiOutbound ?? { liveSmsApproved: false, recipientAllowlist: [] },
 });

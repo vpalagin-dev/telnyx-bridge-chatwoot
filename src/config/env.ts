@@ -48,6 +48,8 @@ const environmentSchema = z
     AI_DEBOUNCE_MS: z.coerce.number().int().min(0).max(300000).default(15000),
     AI_REPLY_LIMIT: z.coerce.number().int().positive().max(1000).default(10),
     AI_REPLY_LIMIT_WINDOW_MS: z.coerce.number().int().positive().max(604800000).default(86400000),
+    AI_CONVERSATION_HISTORY_ENABLED: bool(true),
+    AI_CONVERSATION_HISTORY_MAX_MESSAGES: z.coerce.number().int().min(0).max(100).default(20),
     AI_LIVE_SMS_APPROVED: bool(false),
     AI_LIVE_RECIPIENT_ALLOWLIST: z.preprocess(blank, z.string().default('')),
     CONTACT_SYNC_ENABLED: bool(false),
@@ -137,6 +139,8 @@ export type BridgeConfig = {
     replyLimitWindowMs?: number;
     systemPrompt?: string;
     systemPromptPath?: string;
+    conversationHistoryEnabled?: boolean;
+    conversationHistoryMaxMessages?: number;
   };
   aiOutbound?: { liveSmsApproved: boolean; recipientAllowlist: string[] };
   contactSync?: {
@@ -234,6 +238,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       replyLimitWindowMs: env.AI_REPLY_LIMIT_WINDOW_MS,
       systemPromptPath: env.AI_SYSTEM_PROMPT_PATH,
       ...(env.AI_SYSTEM_PROMPT ? { systemPrompt: env.AI_SYSTEM_PROMPT } : {}),
+      conversationHistoryEnabled: env.AI_CONVERSATION_HISTORY_ENABLED,
+      conversationHistoryMaxMessages: env.AI_CONVERSATION_HISTORY_MAX_MESSAGES,
     },
     aiOutbound: { liveSmsApproved: env.AI_LIVE_SMS_APPROVED, recipientAllowlist: allowlist },
     ...(env.CONTACT_SYNC_ENABLED && env.JAMA_CONTACTS_DATABASE_URL

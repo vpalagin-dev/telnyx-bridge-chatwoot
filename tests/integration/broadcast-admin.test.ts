@@ -30,6 +30,7 @@ const chatwoot = {
   async reopenConversation() {},
   async createIncomingMessage() { return { id: 1 }; },
   async getConversationContactPhone() { return null; },
+  async listConversationMessages() { return []; },
 } satisfies ChatwootClient;
 
 const telnyx: TelnyxClient = { async sendSms() { return { id: 'x' }; } };

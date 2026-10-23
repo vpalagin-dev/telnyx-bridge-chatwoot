@@ -15,4 +15,5 @@ export interface ChatwootClient {
   reopenConversation(conversationId: number): Promise<void>;
   createIncomingMessage(conversationId: number, content: string): Promise<{ id: number }>;
   getConversationContactPhone(conversationId: number): Promise<string | null>;
+  listConversationMessages(conversationId: number): Promise<import('../ai/conversation-history.js').ChatwootHistoryMessage[]>;
 }

@@ -1,5 +1,6 @@
 import type { ChatwootCrmContactPayload } from '../contacts/types.js';
 import { normalizePhone } from '../domain/phone.js';
+import type { ChatwootHistoryMessage } from '../ai/conversation-history.js';
 import type { ChatwootClient, ChatwootContact, ChatwootConversation, ChatwootAiHistoryWriter, AiHistoryMetadata } from './client.js';
 
 type FetchResponse = { ok: boolean; status: number; json(): Promise<unknown> };
@@ -26,6 +27,40 @@ function inboxBinding(source: any, inboxId: number): { source_id: string } | und
   return entries.find((entry: any) => inboxIdOf(entry) === inboxId && entry?.source_id);
 }
 
+
+function parseChatwootHistoryMessage(entry: unknown): ChatwootHistoryMessage | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const candidate = entry as Record<string, unknown>;
+  if (typeof candidate.id !== 'number' || typeof candidate.content !== 'string') return null;
+  const messageType = parseChatwootMessageType(candidate.message_type);
+  if (!messageType) return null;
+  const createdAt = parseChatwootCreatedAt(candidate.created_at);
+  if (createdAt === null) return null;
+  return {
+    id: candidate.id,
+    content: candidate.content,
+    messageType,
+    private: candidate.private === true,
+    createdAt,
+  };
+}
+
+function parseChatwootMessageType(value: unknown): 'incoming' | 'outgoing' | null {
+  if (value === 0 || value === 'incoming') return 'incoming';
+  if (value === 1 || value === 'outgoing') return 'outgoing';
+  return null;
+}
+
+function parseChatwootCreatedAt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value >= 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWriter {
   readonly #options: Options;
@@ -198,6 +233,19 @@ export class HttpChatwootClient implements ChatwootClient, ChatwootAiHistoryWrit
     } catch {
       return null;
     }
+  }
+
+  async listConversationMessages(conversationId: number): Promise<ChatwootHistoryMessage[]> {
+    const data = await this.#request(
+      `/api/v1/accounts/${this.#options.accountId}/conversations/${conversationId}/messages`,
+    );
+    const payload = Array.isArray(data?.payload) ? data.payload : [];
+    const messages: ChatwootHistoryMessage[] = [];
+    for (const entry of payload) {
+      const parsed = parseChatwootHistoryMessage(entry);
+      if (parsed) messages.push(parsed);
+    }
+    return messages;
   }
 
   async createAiHistoryMessage(conversationId: number, text: string, metadata: AiHistoryMetadata): Promise<{ id: number }> {

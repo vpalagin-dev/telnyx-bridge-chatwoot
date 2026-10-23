@@ -42,6 +42,9 @@ class FakeChatwoot implements ChatwootClient {
   async getConversationContactPhone() {
     return null;
   }
+  async listConversationMessages() {
+    return [];
+  }
 }
 
 const stores: FakeOperationalStore[] = [];

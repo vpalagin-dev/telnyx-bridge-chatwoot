@@ -100,6 +100,44 @@ describe('conversational AI policy', () => {
     expect(telnyx.calls).toHaveLength(1);
   });
 
+  it('passes recent Chatwoot messages to OpenAI as conversation turns', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    let conversationTurns: unknown;
+    const openai = {
+      async generate(request: { conversationTurns?: unknown }) {
+        conversationTurns = request.conversationTurns;
+        return { kind: 'answer' as const, text: 'Wear something comfortable.' };
+      },
+    };
+    const deps = {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
+      store,
+      openai,
+      history,
+      telnyx,
+      conversationHistory: {
+        listConversationMessages: vi.fn(async () => ([
+          { id: 30, content: 'I am coming with my sister', messageType: 'incoming' as const, private: false, createdAt: 1 },
+          { id: 31, content: 'Nice!', messageType: 'outgoing' as const, private: false, createdAt: 2 },
+        ])),
+      },
+    };
+
+    const result = await processAiPostInbound(
+      { ...input('inbound-history', 36), inboundMessageId: 99, customerMessage: 'What should we wear?' },
+      deps,
+    );
+
+    expect(result.outcome).toBe('answered');
+    expect(conversationTurns).toEqual([
+      { role: 'user', content: 'I am coming with my sister' },
+      { role: 'assistant', content: 'Nice!' },
+    ]);
+  });
+
   it('uses the injected source-neutral knowledge provider for approved context', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);

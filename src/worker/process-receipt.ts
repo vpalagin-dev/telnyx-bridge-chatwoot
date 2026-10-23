@@ -107,7 +107,15 @@ function buildInboundDependencies(deps: ReceiptProcessorDeps): Parameters<typeof
     senderNumber: deps.senderNumber,
   };
   if (deps.config && deps.openai && deps.history && deps.telnyx) {
-    result.postInbound = buildPostInboundAiHook({ config: deps.config, store: deps.operationalStore, openai: deps.openai, history: deps.history, telnyx: deps.telnyx, ...(deps.knowledge ? { knowledge: deps.knowledge } : {}) });
+    result.postInbound = buildPostInboundAiHook({
+      config: deps.config,
+      store: deps.operationalStore,
+      openai: deps.openai,
+      history: deps.history,
+      telnyx: deps.telnyx,
+      ...(deps.knowledge ? { knowledge: deps.knowledge } : {}),
+      ...(deps.chatwoot ? { conversationHistory: deps.chatwoot } : {}),
+    });
   }
   return result;
 }

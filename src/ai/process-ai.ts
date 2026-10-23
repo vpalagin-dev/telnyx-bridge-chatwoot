@@ -1,6 +1,7 @@
 import type { BridgeConfig } from '../config/env.js';
 import type { OperationalStore } from '../persistence/operational-store.js';
-import type { ChatwootAiHistoryWriter, OpenAiAdapter, AiTelnyxDispatcher, PostInboundAiInput, AiProcessResult } from './types.js';
+import { buildConversationTurns } from './conversation-history.js';
+import type { ChatwootAiHistoryWriter, ChatwootConversationHistoryReader, OpenAiAdapter, AiTelnyxDispatcher, PostInboundAiInput, AiProcessResult } from './types.js';
 import type { KnowledgeProvider } from './knowledge-provider.js';
 import { validateAiDecision } from './response-validation.js';
 import { classifyEscalation } from './escalation.js';
@@ -21,6 +22,7 @@ export async function processAiPostInbound(
     history: ChatwootAiHistoryWriter;
     telnyx: AiTelnyxDispatcher;
      knowledge?: KnowledgeProvider;
+    conversationHistory?: ChatwootConversationHistoryReader;
   },
 ): Promise<AiProcessResult> {
   const config = d.config;
@@ -95,6 +97,27 @@ export async function processAiPostInbound(
       'Answer the customer naturally for this smoke test. No JAMA-specific knowledge base is configured yet; do not present unverified event-specific facts as certain.';
   }
 
+  let conversationTurns: ReturnType<typeof buildConversationTurns> = [];
+  if (
+    ai.conversationHistoryEnabled !== false
+    && (ai.conversationHistoryMaxMessages ?? 20) > 0
+    && d.conversationHistory
+  ) {
+    try {
+      const messages = await d.conversationHistory.listConversationMessages(input.conversationId);
+      conversationTurns = buildConversationTurns(messages, {
+        excludeMessageId: input.inboundMessageId,
+        limit: ai.conversationHistoryMaxMessages ?? 20,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.info(
+        { component: 'ai', event: 'conversation_history_fetch_failed', conversationId: input.conversationId, message },
+        'conversation history fetch failed; continuing without history',
+      );
+    }
+  }
+
   let raw;
   try {
     raw = await d.openai.generate({
@@ -106,6 +129,7 @@ export async function processAiPostInbound(
       approvedContext: `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`,
       customerMessage: input.customerMessage,
       safeFallbackText: ai.safeFallbackText,
+      ...(conversationTurns.length > 0 ? { conversationTurns } : {}),
     });
   } catch {
     await d.store.setAiDecisionOutcome(decisionId, { outcome: 'provider_error', status: 'completed', state: 'waiting_for_human' });

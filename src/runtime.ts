@@ -36,6 +36,7 @@ const defaults = (c: BridgeConfig): BridgeConfig => ({
     knowledgeRoot: 'specs/002-jama-ai-assistant-smoke/knowledge',
     safeFallbackText: "I'm not sure about that. Let me get someone from the JAMA team to help you.",
     escalationEnabled: true,
+    systemPromptPath: 'specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md',
   },
   aiOutbound: c.aiOutbound ?? { liveSmsApproved: false, recipientAllowlist: [] },
 });
@@ -69,12 +70,16 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
   const pool = new Pool({ connectionString: config.databaseUrl });
   const operationalStore = new PostgresOperationalStore(config.databaseUrl, pool);
   const receiptStore = new PostgresStore(config.databaseUrl, pool);
-  const chatwoot = new HttpChatwootClient({
+  const chatwootClientOptions = {
     baseUrl: config.chatwoot.url,
     accountId: config.chatwoot.accountId,
     inboxId: config.chatwoot.inboxId,
     apiToken: config.chatwoot.apiToken,
-  });
+  };
+  const chatwoot = new HttpChatwootClient(chatwootClientOptions);
+  const aiHistory = config.chatwoot.aiApiToken
+    ? new HttpChatwootClient({ ...chatwootClientOptions, apiToken: config.chatwoot.aiApiToken })
+    : chatwoot;
   const telnyx = createTelnyxClient(config);
   const openai = config.ai!.enabled && config.ai!.providerMode === 'live' && config.ai!.liveOpenAiEnabled && config.ai!.openAiApiKey
     ? new LiveOpenAiAdapter({ apiKey: config.ai!.openAiApiKey, model: config.ai!.model, timeoutMs: config.ai!.timeoutMs })
@@ -128,7 +133,7 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     chatwoot,
     telnyx,
     openai,
-    history: chatwoot,
+    history: aiHistory,
     aiTelnyx,
     knowledgeStore,
     knowledgeProvider,

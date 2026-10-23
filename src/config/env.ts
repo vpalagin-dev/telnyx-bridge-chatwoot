@@ -40,6 +40,9 @@ const environmentSchema = z
      CHATWOOT_HELP_CENTER_LOCALE: z.string().min(1).default('en'),
      AI_KNOWLEDGE_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     AI_KNOWLEDGE_ROOT: z.string().min(1).default('specs/002-jama-ai-assistant-smoke/knowledge'),
+    AI_SYSTEM_PROMPT: z.preprocess(blank, z.string().min(1).optional()),
+    AI_SYSTEM_PROMPT_PATH: z.string().min(1).default('specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md'),
+    CHATWOOT_AI_API_TOKEN: z.preprocess(blank, z.string().min(1).optional()),
     AI_SAFE_FALLBACK_TEXT: z.string().min(1).default("I'm not sure about that. Let me get someone from the JAMA team to help you."),
     AI_ESCALATION_ENABLED: bool(true),
     AI_DEBOUNCE_MS: z.coerce.number().int().min(0).max(300000).default(15000),
@@ -106,7 +109,7 @@ export type BridgeConfig = {
     redisPrefix: string;
   };
   runtimeRole: 'web' | 'worker';
-  chatwoot: { url: string; accountId: number; inboxId: number; apiToken: string; webhookSecret?: string };
+  chatwoot: { url: string; accountId: number; inboxId: number; apiToken: string; aiApiToken?: string; webhookSecret?: string };
   telnyx: { apiKey: string; publicKey?: string; senderNumber: string };
   outbound:
     | { mode: 'fake'; testRecipientNumber?: string; campaignDelayMs?: number }
@@ -132,6 +135,8 @@ export type BridgeConfig = {
     debounceMs?: number;
     replyLimit?: number;
     replyLimitWindowMs?: number;
+    systemPrompt?: string;
+    systemPromptPath?: string;
   };
   aiOutbound?: { liveSmsApproved: boolean; recipientAllowlist: string[] };
   contactSync?: {
@@ -186,6 +191,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       accountId: env.CHATWOOT_ACCOUNT_ID,
       inboxId: env.CHATWOOT_INBOX_ID,
       apiToken: env.CHATWOOT_API_TOKEN,
+      ...(env.CHATWOOT_AI_API_TOKEN ? { aiApiToken: env.CHATWOOT_AI_API_TOKEN } : {}),
       ...(env.CHATWOOT_WEBHOOK_SECRET ? { webhookSecret: env.CHATWOOT_WEBHOOK_SECRET } : {}),
     },
     telnyx: {
@@ -226,6 +232,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       debounceMs: env.AI_DEBOUNCE_MS,
       replyLimit: env.AI_REPLY_LIMIT,
       replyLimitWindowMs: env.AI_REPLY_LIMIT_WINDOW_MS,
+      systemPromptPath: env.AI_SYSTEM_PROMPT_PATH,
+      ...(env.AI_SYSTEM_PROMPT ? { systemPrompt: env.AI_SYSTEM_PROMPT } : {}),
     },
     aiOutbound: { liveSmsApproved: env.AI_LIVE_SMS_APPROVED, recipientAllowlist: allowlist },
     ...(env.CONTACT_SYNC_ENABLED && env.JAMA_CONTACTS_DATABASE_URL

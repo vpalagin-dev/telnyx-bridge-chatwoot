@@ -5,7 +5,16 @@ import { BRIDGE_SCHEMA, POSTGRES_SCHEMA_SQL } from './schema.js';
 import type { ActiveKnowledge, KnowledgeSnapshot, KnowledgeStore } from './knowledge-store.js';
 
 type SnapshotRow = { id: string; profile_id: string; source: 'chatwoot' | 'local'; content_hash: string; article_count: number; activated_at: Date };
-type DocumentRow = { source_article_id: string | number; slug: string; title: string; content: string; source_updated_at: Date; position: number };
+type DocumentRow = {
+  source_article_id: string | number;
+  slug: string;
+  title: string;
+  content: string;
+  source_updated_at: Date;
+  position: number;
+  category_slug: string;
+  document_kind: KnowledgeDocument['kind'];
+};
 
 export class PostgresKnowledgeStore implements KnowledgeStore {
   readonly #pool: Pool;
@@ -25,9 +34,9 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
       for (const document of documents) {
         await client.query(
           `INSERT INTO ${BRIDGE_SCHEMA}.knowledge_documents
-             (snapshot_id, source_article_id, slug, title, content, source_updated_at, position)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [id, document.sourceArticleId, document.slug, document.title, document.content, document.sourceUpdatedAt, document.position],
+             (snapshot_id, source_article_id, slug, title, content, source_updated_at, position, category_slug, document_kind)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [id, document.sourceArticleId, document.slug, document.title, document.content, document.sourceUpdatedAt, document.position, document.categorySlug, document.kind],
         );
       }
       await client.query(`UPDATE ${BRIDGE_SCHEMA}.knowledge_snapshots SET status = 'superseded' WHERE profile_id = $1 AND status = 'active'`, [profileId]);
@@ -52,7 +61,7 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     if (active.rowCount !== 1) return null;
     const row = active.rows[0]!;
     const documents = await this.#pool.query<DocumentRow>(
-      `SELECT source_article_id, slug, title, content, source_updated_at, position
+      `SELECT source_article_id, slug, title, content, source_updated_at, position, category_slug, document_kind
        FROM ${BRIDGE_SCHEMA}.knowledge_documents
        WHERE snapshot_id = $1 ORDER BY position ASC, source_article_id ASC`, [row.id],
     );
@@ -71,5 +80,14 @@ function mapSnapshot(row: SnapshotRow): KnowledgeSnapshot {
   return { id: row.id, profileId: row.profile_id, source: row.source, contentHash: row.content_hash, articleCount: Number(row.article_count), activatedAt: new Date(row.activated_at).toISOString() };
 }
 function mapDocument(row: DocumentRow): KnowledgeDocument {
-  return { sourceArticleId: Number(row.source_article_id), slug: row.slug, title: row.title, content: row.content, sourceUpdatedAt: new Date(row.source_updated_at).toISOString(), position: Number(row.position) };
+  return {
+    sourceArticleId: Number(row.source_article_id),
+    slug: row.slug,
+    title: row.title,
+    content: row.content,
+    sourceUpdatedAt: new Date(row.source_updated_at).toISOString(),
+    position: Number(row.position),
+    categorySlug: row.category_slug,
+    kind: row.document_kind,
+  };
 }

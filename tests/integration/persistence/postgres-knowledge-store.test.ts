@@ -24,11 +24,11 @@ suite('PostgresKnowledgeStore (disposable TEST_DATABASE_URL only)', () => {
   it('initializes snapshot tables and activates ordered knowledge', async () => {
     const profileId = `jama-${randomUUID()}`;
     const documents: KnowledgeDocument[] = [
-      { sourceArticleId: 2, slug: 'two', title: 'Two', content: '2', sourceUpdatedAt: '2026-01-02T00:00:00.000Z', position: 2 },
-      { sourceArticleId: 1, slug: 'one', title: 'One', content: '1', sourceUpdatedAt: '2026-01-01T00:00:00.000Z', position: 1 },
+      { sourceArticleId: 2, slug: 'two', title: 'Two', content: '2', sourceUpdatedAt: '2026-01-02T00:00:00.000Z', position: 2, categorySlug: 'faq', kind: 'factual' },
+      { sourceArticleId: 1, slug: 'system-prompt', title: 'System prompt', content: '1', sourceUpdatedAt: '2026-01-01T00:00:00.000Z', position: 1, categorySlug: 'system-prompt', kind: 'system_prompt' },
     ];
     const first = await store.activateChatwootSnapshot(profileId, documents, 'hash-1');
-    expect(await store.getActiveKnowledge(profileId)).toMatchObject({ snapshot: { id: first.id, articleCount: 2 }, documents: [{ sourceArticleId: 1 }, { sourceArticleId: 2 }] });
+    expect(await store.getActiveKnowledge(profileId)).toMatchObject({ snapshot: { id: first.id, articleCount: 2 }, documents: [{ sourceArticleId: 1, categorySlug: 'system-prompt', kind: 'system_prompt' }, { sourceArticleId: 2, categorySlug: 'faq', kind: 'factual' }] });
     const second = await store.activateChatwootSnapshot(profileId, [documents[0]!], 'hash-2');
     expect((await store.getActiveKnowledge(profileId))?.snapshot.id).toBe(second.id);
     expect((await pool.query('SELECT count(*)::int AS count FROM telnyx_bridge.knowledge_snapshots WHERE profile_id = $1', [profileId])).rows[0].count).toBe(2);

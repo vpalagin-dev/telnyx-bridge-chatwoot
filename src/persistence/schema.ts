@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS ${BRIDGE_SCHEMA}.knowledge_documents (
   content text NOT NULL,
   source_updated_at timestamptz NOT NULL,
   position integer NOT NULL,
+  category_slug text NOT NULL DEFAULT '',
+  document_kind text NOT NULL DEFAULT 'factual',
+  CONSTRAINT knowledge_documents_kind_check CHECK (document_kind IN ('system_prompt','factual')),
   PRIMARY KEY (snapshot_id, source_article_id)
 );
 
@@ -157,4 +160,17 @@ ALTER TABLE ${BRIDGE_SCHEMA}.webhook_receipts ALTER COLUMN status SET DEFAULT 'p
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS published_at timestamptz;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS publication_claimed_by text;
 ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS publication_claimed_at timestamptz;
+ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents ADD COLUMN IF NOT EXISTS category_slug text NOT NULL DEFAULT '';
+ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents ADD COLUMN IF NOT EXISTS document_kind text NOT NULL DEFAULT 'factual';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'knowledge_documents_kind_check'
+      AND conrelid = '${BRIDGE_SCHEMA}.knowledge_documents'::regclass
+  ) THEN
+    ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents
+      ADD CONSTRAINT knowledge_documents_kind_check CHECK (document_kind IN ('system_prompt','factual'));
+  END IF;
+END $$;
 `;

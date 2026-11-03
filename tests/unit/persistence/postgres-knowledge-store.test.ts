@@ -6,8 +6,8 @@ import { POSTGRES_SCHEMA_SQL } from '../../../src/persistence/schema.js';
 import type { KnowledgeDocument } from '../../../src/ai/chatwoot-knowledge.js';
 
 const documents: KnowledgeDocument[] = [
-  { sourceArticleId: 2, slug: 'second', title: 'Second', content: 'two', sourceUpdatedAt: '2026-01-02T00:00:00.000Z', position: 2 },
-  { sourceArticleId: 1, slug: 'first', title: 'First', content: 'one', sourceUpdatedAt: '2026-01-01T00:00:00.000Z', position: 1 },
+  { sourceArticleId: 2, slug: 'second', title: 'Second', content: 'two', sourceUpdatedAt: '2026-01-02T00:00:00.000Z', position: 2, categorySlug: 'faq', kind: 'factual' },
+  { sourceArticleId: 1, slug: 'system-prompt', title: 'System prompt', content: 'one', sourceUpdatedAt: '2026-01-01T00:00:00.000Z', position: 1, categorySlug: 'system-prompt', kind: 'system_prompt' },
 ];
 
 describe('PostgresKnowledgeStore', () => {
@@ -16,6 +16,11 @@ describe('PostgresKnowledgeStore', () => {
     expect(POSTGRES_SCHEMA_SQL).toContain('knowledge_documents');
     expect(POSTGRES_SCHEMA_SQL).toContain("WHERE status = 'active'");
     expect(POSTGRES_SCHEMA_SQL).toContain("CHECK (source IN ('chatwoot', 'local'))");
+    expect(POSTGRES_SCHEMA_SQL).toContain('category_slug text NOT NULL DEFAULT');
+    expect(POSTGRES_SCHEMA_SQL).toContain('document_kind text NOT NULL DEFAULT');
+    expect(POSTGRES_SCHEMA_SQL).toContain("document_kind IN ('system_prompt','factual')");
+    expect(POSTGRES_SCHEMA_SQL).toContain('ADD COLUMN IF NOT EXISTS category_slug text');
+    expect(POSTGRES_SCHEMA_SQL).toContain('ADD COLUMN IF NOT EXISTS document_kind text');
   });
 
   it('activates a complete document set and returns the snapshot', async () => {
@@ -29,7 +34,7 @@ describe('PostgresKnowledgeStore', () => {
     const snapshot = await store.activateChatwootSnapshot('jama-ama-v1.3', documents, 'hash-1');
 
     expect(snapshot).toMatchObject({ id: 'snapshot-1', profileId: 'jama-ama-v1.3', source: 'chatwoot', contentHash: 'hash-1', articleCount: 2 });
-    expect(queries.some((query) => query.includes('INSERT INTO telnyx_bridge.knowledge_documents'))).toBe(true);
+    expect(queries.some((query) => query.includes('category_slug, document_kind'))).toBe(true);
     expect(queries.some((query) => query.includes("SET status = 'superseded'"))).toBe(true);
     expect(queries.some((query) => query.includes("SET status = 'active'"))).toBe(true);
   });
@@ -37,13 +42,15 @@ describe('PostgresKnowledgeStore', () => {
   it('returns active knowledge with documents ordered by position', async () => {
     const client = fakeClient([], {
       activeRows: [{ id: 'snapshot-1', profile_id: 'jama-ama-v1.3', source: 'chatwoot', content_hash: 'hash-1', article_count: 2, activated_at: new Date('2026-01-03T00:00:00.000Z') }],
-      documentRows: [documents[1]!, documents[0]!].map((document) => ({ source_article_id: document.sourceArticleId, slug: document.slug, title: document.title, content: document.content, source_updated_at: new Date(document.sourceUpdatedAt), position: document.position })),
+      documentRows: [documents[1]!, documents[0]!].map((document) => ({ source_article_id: document.sourceArticleId, slug: document.slug, title: document.title, content: document.content, source_updated_at: new Date(document.sourceUpdatedAt), position: document.position, category_slug: document.categorySlug, document_kind: document.kind })),
     });
     const store = new PostgresKnowledgeStore('postgres://unused', fakePool(client));
 
     const result = await store.getActiveKnowledge('jama-ama-v1.3');
 
     expect(result?.documents.map((document) => document.sourceArticleId)).toEqual([1, 2]);
+    expect(result?.documents[0]).toMatchObject({ categorySlug: 'system-prompt', kind: 'system_prompt' });
+    expect(result?.documents[1]).toMatchObject({ categorySlug: 'faq', kind: 'factual' });
     expect(result?.snapshot.activatedAt).toBe('2026-01-03T00:00:00.000Z');
   });
 

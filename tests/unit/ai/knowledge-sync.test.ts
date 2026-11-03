@@ -12,6 +12,7 @@ const article = (overrides: Partial<ChatwootKnowledgeArticle> = {}): ChatwootKno
   status: 'published',
   updatedAt: '2026-10-15T00:00:00.000Z',
   position: 10,
+  categorySlug: 'system-prompt',
   ...overrides,
 });
 
@@ -36,8 +37,8 @@ describe('knowledge sync service', () => {
     const firstStore = store();
     const secondStore = store();
     const options = { profileId: 'jama', intervalMs: 1000 };
-    const first = createKnowledgeSyncService({ ...options, client: client([article(), article({ id: 2, slug: 'second', title: 'Second', position: 1 })]), store: firstStore });
-    const second = createKnowledgeSyncService({ ...options, client: client([article({ id: 2, slug: 'second', title: 'Second', position: 1 }), article()]), store: secondStore });
+    const first = createKnowledgeSyncService({ ...options, client: client([article(), article({ id: 2, slug: 'second', title: 'Second', position: 1, categorySlug: 'faq' })]), store: firstStore });
+    const second = createKnowledgeSyncService({ ...options, client: client([article({ id: 2, slug: 'second', title: 'Second', position: 1, categorySlug: 'faq' }), article()]), store: secondStore });
 
     const firstResult = await first.syncOnce();
     const secondResult = await second.syncOnce();
@@ -57,6 +58,84 @@ describe('knowledge sync service', () => {
     await expect(service.syncOnce()).resolves.toMatchObject({ activated: true, articleCount: 1 });
     expect(knowledgeStore.activateChatwootSnapshot).toHaveBeenCalledTimes(1);
     expect(knowledgeStore.activateChatwootSnapshot).toHaveBeenCalledWith('jama', [expect.objectContaining({ sourceArticleId: 1 })], expect.any(String));
+  });
+
+  it('rejects a published article set without a system prompt before activation', async () => {
+    const knowledgeStore = store();
+    const service = createKnowledgeSyncService({
+      client: client([article({ categorySlug: 'faq' })]),
+      store: knowledgeStore,
+      profileId: 'jama',
+      intervalMs: 1000,
+    });
+
+    await expect(service.syncOnce()).rejects.toMatchObject({
+      code: 'chatwoot_knowledge_system_prompt_missing_or_ambiguous',
+    });
+    expect(knowledgeStore.activateChatwootSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than one system prompt before activation', async () => {
+    const knowledgeStore = store();
+    const service = createKnowledgeSyncService({
+      client: client([article(), article({ id: 2, slug: 'second-prompt' })]),
+      store: knowledgeStore,
+      profileId: 'jama',
+      intervalMs: 1000,
+    });
+
+    await expect(service.syncOnce()).rejects.toMatchObject({
+      code: 'chatwoot_knowledge_system_prompt_missing_or_ambiguous',
+    });
+    expect(knowledgeStore.activateChatwootSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('activates one system prompt together with all factual documents', async () => {
+    const knowledgeStore = store();
+    const factualOne = article({ id: 2, slug: 'founders', categorySlug: 'faq' });
+    const factualTwo = article({ id: 3, slug: 'hours', categorySlug: 'faq', position: 20 });
+    const service = createKnowledgeSyncService({
+      client: client([article(), factualOne, factualTwo]),
+      store: knowledgeStore,
+      profileId: 'jama',
+      intervalMs: 1000,
+    });
+
+    await expect(service.syncOnce()).resolves.toMatchObject({ activated: true, articleCount: 3 });
+    expect(knowledgeStore.activateChatwootSnapshot).toHaveBeenCalledWith(
+      'jama',
+      [
+        expect.objectContaining({ sourceArticleId: 1, kind: 'system_prompt' }),
+        expect.objectContaining({ sourceArticleId: 2, kind: 'factual' }),
+        expect.objectContaining({ sourceArticleId: 3, kind: 'factual' }),
+      ],
+      expect.any(String),
+    );
+  });
+
+  it('preserves sanitized validation stage classification without leaking the article set', async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const service = createKnowledgeSyncService({
+      client: client([article({ categorySlug: 'faq' })]),
+      store: store(),
+      profileId: 'jama',
+      intervalMs: 1000,
+      logger,
+    });
+
+    const handle = service.start();
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
+    await handle.stop();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        code: 'knowledge_sync_failed',
+        errorName: 'Error',
+        errorCode: 'chatwoot_knowledge_system_prompt_missing_or_ambiguous',
+      },
+      'knowledge sync failed',
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('founders');
   });
 
   it('activates changed article content as a new snapshot', async () => {
@@ -208,12 +287,12 @@ describe('knowledge sync service', () => {
     await handle.stop();
   });
 
-  it('accepts a complete empty published result', async () => {
+  it('rejects a complete empty published result before activation', async () => {
     const knowledgeStore = store();
     const service = createKnowledgeSyncService({ client: client([]), store: knowledgeStore, profileId: 'jama', intervalMs: 1000 });
 
-    await expect(service.syncOnce()).resolves.toMatchObject({ activated: true, articleCount: 0 });
-    expect(knowledgeStore.activateChatwootSnapshot).toHaveBeenCalledWith('jama', [], expect.any(String));
+    await expect(service.syncOnce()).rejects.toMatchObject({ code: 'chatwoot_knowledge_system_prompt_missing_or_ambiguous' });
+    expect(knowledgeStore.activateChatwootSnapshot).not.toHaveBeenCalled();
   });
 
   it('does not activate malformed articles', async () => {

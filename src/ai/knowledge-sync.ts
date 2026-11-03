@@ -36,6 +36,17 @@ function stableDocuments(documents: KnowledgeDocument[]): KnowledgeDocument[] {
   return [...documents].sort((left, right) => left.position - right.position || left.sourceArticleId - right.sourceArticleId);
 }
 
+function validateSystemPrompt(documents: KnowledgeDocument[]): void {
+  const systemPromptCount = documents.filter((document) => document.kind === 'system_prompt').length;
+  if (systemPromptCount === 1) return;
+  const error = new Error('chatwoot_knowledge_system_prompt_missing_or_ambiguous');
+  Object.defineProperty(error, 'code', {
+    value: 'chatwoot_knowledge_system_prompt_missing_or_ambiguous',
+    enumerable: true,
+  });
+  throw error;
+}
+
 function hashDocuments(documents: KnowledgeDocument[]): string {
   const stable = stableDocuments(documents).map((document) => ({
     sourceArticleId: document.sourceArticleId,
@@ -104,6 +115,7 @@ export function createKnowledgeSyncService(options: {
     } catch (error) {
       throw stageError('knowledge_normalize_failed', error);
     }
+    validateSystemPrompt(documents);
     const contentHash = hashDocuments(documents);
     try {
       await options.store.activateChatwootSnapshot(options.profileId, documents, contentHash);

@@ -6,6 +6,7 @@ export type ApprovedKnowledge = {
   event: { status: string; effective_from: string; review_by: string };
   eventMarkdown: string;
   sharedMarkdown: string;
+  systemPrompt?: string;
 };
 
 type KnowledgeMetadata = Record<string, string>;

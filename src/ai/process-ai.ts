@@ -8,7 +8,9 @@ import { classifyEscalation } from './escalation.js';
 import { validateSingleSegment } from './sms-validation.js';
 import { AiReplyRateLimiter, DEFAULT_AI_REPLY_LIMITS } from './rate-limit.js';
 import { createLogger } from '../observability/logger.js';
-import { loadAmaSystemPrompt } from './load-system-prompt.js';
+import { composeAmaSystemInstruction, loadAmaSystemPrompt } from './load-system-prompt.js';
+
+const NO_APPROVED_FACTUAL_CONTEXT = '[No approved factual context was found for this customer message.]';
 
 const logger = createLogger();
 const audit = (event: string, details: object = {}) => logger.info({ component: 'ai', event, ...details }, 'ai lifecycle');
@@ -65,10 +67,10 @@ export async function processAiPostInbound(
     return { outcome: 'duplicate', aiDecisionId: prior.aiDecisionId, state: prior.state };
   }
 
-  let knowledge: { eventMarkdown: string; sharedMarkdown: string } = { eventMarkdown: '', sharedMarkdown: '' };
+  let knowledge: { eventMarkdown: string; sharedMarkdown: string; systemPrompt?: string } = { eventMarkdown: '', sharedMarkdown: '' };
   if (d.knowledge && (ai.defaultEventId || ai.knowledgeSource === 'chatwoot')) {
     try {
-      knowledge = await d.knowledge.load(eventId);
+      knowledge = await d.knowledge.load(eventId, input.customerMessage);
     } catch {
       await d.store.setAiDecisionOutcome(decisionId, { outcome: 'escalated', status: 'completed', state: 'waiting_for_human' });
       return { outcome: 'escalated', aiDecisionId: decisionId, state: 'waiting_for_human' };
@@ -80,9 +82,16 @@ export async function processAiPostInbound(
     return { outcome: 'escalated', aiDecisionId: decisionId, state: 'waiting_for_human' };
   }
 
-  const useAmaPersona = Boolean(ai.defaultEventId || ai.knowledgeSource === 'chatwoot');
+  const useChatwootPrompt = ai.knowledgeSource === 'chatwoot';
+  const useAmaPersona = Boolean(ai.defaultEventId || useChatwootPrompt);
   let systemInstruction: string;
-  if (useAmaPersona) {
+  if (useChatwootPrompt) {
+    if (!knowledge.systemPrompt?.trim()) {
+      await d.store.setAiDecisionOutcome(decisionId, { outcome: 'provider_error', status: 'completed', state: 'waiting_for_human' });
+      return { outcome: 'provider_error', aiDecisionId: decisionId, state: 'waiting_for_human' };
+    }
+    systemInstruction = composeAmaSystemInstruction(knowledge.systemPrompt);
+  } else if (useAmaPersona) {
     try {
       systemInstruction = await loadAmaSystemPrompt({
         ...(ai.systemPrompt ? { inline: ai.systemPrompt } : {}),
@@ -126,7 +135,9 @@ export async function processAiPostInbound(
       maxOutputTokens: ai.maxOutputTokens,
       systemInstruction,
       eventId,
-      approvedContext: `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`,
+      approvedContext: useChatwootPrompt && !knowledge.eventMarkdown.trim() && !knowledge.sharedMarkdown.trim()
+        ? NO_APPROVED_FACTUAL_CONTEXT
+        : `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`.trim(),
       customerMessage: input.customerMessage,
       safeFallbackText: ai.safeFallbackText,
       ...(conversationTurns.length > 0 ? { conversationTurns } : {}),

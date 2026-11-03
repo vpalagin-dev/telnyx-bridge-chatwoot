@@ -124,6 +124,15 @@ describe('conversational AI policy', () => {
           { id: 31, content: 'Nice!', messageType: 'outgoing' as const, private: false, createdAt: 2 },
         ])),
       },
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: '',
+          sharedMarkdown: '',
+          systemPrompt: 'Chatwoot Ama persona',
+        })),
+      },
     };
 
     const result = await processAiPostInbound(
@@ -138,6 +147,69 @@ describe('conversational AI policy', () => {
     ]);
   });
 
+  it('uses the Chatwoot provider system prompt instead of the local prompt file', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    let systemInstruction = '';
+    const openai = {
+      async generate(request: { systemInstruction: string }) {
+        systemInstruction = request.systemInstruction;
+        return { kind: 'answer' as const, text: 'The answer is approved.' };
+      },
+    };
+    const deps = {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const, systemPromptPath: 'missing-local-prompt.md' } },
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: 'Chatwoot facts',
+          sharedMarkdown: '',
+          systemPrompt: 'Chatwoot Ama persona',
+        })),
+      },
+    };
+
+    const result = await processAiPostInbound(input('inbound-chatwoot-prompt', 34), deps);
+
+    expect(result.outcome).toBe('answered');
+    expect(systemInstruction).toContain('Chatwoot Ama persona');
+    expect(systemInstruction).not.toContain('missing-local-prompt');
+  });
+
+  it('fails closed without calling OpenAI when Chatwoot has no valid system prompt', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const generate = vi.fn(async () => ({ kind: 'answer' as const, text: 'must not run' }));
+    const result = await processAiPostInbound(input('inbound-missing-chatwoot-prompt', 34), {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
+      store,
+      openai: { generate },
+      history,
+      telnyx,
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: 'Chatwoot facts',
+          sharedMarkdown: '',
+        })),
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: 'provider_error', state: 'waiting_for_human' });
+    expect(generate).not.toHaveBeenCalled();
+    expect(telnyx.calls).toHaveLength(0);
+  });
+
   it('uses the injected source-neutral knowledge provider for approved context', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);
@@ -150,11 +222,12 @@ describe('conversational AI policy', () => {
         return { kind: 'answer' as const, text: 'The answer is approved.' };
       },
     };
-    const load = vi.fn(async (eventId: string) => ({
+    const load = vi.fn(async (eventId: string, _query?: string) => ({
       eventId,
       event: { status: 'active', effective_from: '', review_by: '' },
       eventMarkdown: 'Chatwoot snapshot answer',
       sharedMarkdown: 'Shared answer',
+      systemPrompt: 'Chatwoot Ama persona',
     }));
     const deps = {
       config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
@@ -168,8 +241,42 @@ describe('conversational AI policy', () => {
     const result = await processAiPostInbound(input('inbound-provider', 34), deps);
 
     expect(result.outcome).toBe('answered');
-    expect(load).toHaveBeenCalledWith('jama-ama-v1.3');
+    expect(load).toHaveBeenCalledWith('jama-ama-v1.3', 'Where is the venue?');
     expect(approvedContext).toBe('Chatwoot snapshot answer\nShared answer');
+  });
+
+  it('marks missing factual retrieval context explicitly', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    let approvedContext = '';
+    const openai = {
+      async generate(request: { approvedContext: string }) {
+        approvedContext = request.approvedContext;
+        return { kind: 'answer' as const, text: 'I do not have that approved fact.' };
+      },
+    };
+    const result = await processAiPostInbound(input('inbound-no-factual-result', 35), {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: '',
+          sharedMarkdown: '',
+          systemPrompt: 'Chatwoot Ama persona',
+        })),
+      },
+    });
+
+    expect(result.outcome).toBe('answered');
+    expect(approvedContext).toContain('No approved factual context was found');
+    expect(approvedContext).not.toBe('');
   });
 
   it('preserves local no-knowledge-base behavior without invoking a provider', async () => {

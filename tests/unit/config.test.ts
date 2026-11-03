@@ -33,6 +33,7 @@ describe('loadConfig', () => {
       knowledgeSource: 'local',
       helpCenterSlug: 'jama-help-center',
       helpCenterLocale: 'en',
+      systemPromptCategorySlug: 'system-prompt',
       knowledgeSyncIntervalMs: 300000,
     });
   });
@@ -43,6 +44,7 @@ describe('loadConfig', () => {
       AI_KNOWLEDGE_SOURCE: 'chatwoot',
       CHATWOOT_HELP_CENTER_SLUG: 'custom-help',
       CHATWOOT_HELP_CENTER_LOCALE: 'fr',
+      CHATWOOT_SYSTEM_PROMPT_CATEGORY_SLUG: 'assistant-prompt',
       AI_KNOWLEDGE_SYNC_INTERVAL_MS: '120000',
     });
 
@@ -50,6 +52,7 @@ describe('loadConfig', () => {
       knowledgeSource: 'chatwoot',
       helpCenterSlug: 'custom-help',
       helpCenterLocale: 'fr',
+      systemPromptCategorySlug: 'assistant-prompt',
       knowledgeSyncIntervalMs: 120000,
     });
   });

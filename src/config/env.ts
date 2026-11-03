@@ -38,6 +38,7 @@ const environmentSchema = z
      AI_KNOWLEDGE_SOURCE: z.enum(['local', 'chatwoot']).default('local'),
      CHATWOOT_HELP_CENTER_SLUG: z.string().default('jama-help-center'),
      CHATWOOT_HELP_CENTER_LOCALE: z.string().min(1).default('en'),
+     CHATWOOT_SYSTEM_PROMPT_CATEGORY_SLUG: z.string().min(1).default('system-prompt'),
      AI_KNOWLEDGE_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
     AI_KNOWLEDGE_ROOT: z.string().min(1).default('specs/002-jama-ai-assistant-smoke/knowledge'),
     AI_SYSTEM_PROMPT: z.preprocess(blank, z.string().min(1).optional()),
@@ -130,6 +131,7 @@ export type BridgeConfig = {
     knowledgeSource?: 'local' | 'chatwoot';
     helpCenterSlug?: string;
     helpCenterLocale?: string;
+     systemPromptCategorySlug?: string;
     knowledgeSyncIntervalMs?: number;
     knowledgeRoot: string;
     safeFallbackText: string;
@@ -229,6 +231,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       knowledgeSource: env.AI_KNOWLEDGE_SOURCE,
        helpCenterSlug: env.CHATWOOT_HELP_CENTER_SLUG,
        helpCenterLocale: env.CHATWOOT_HELP_CENTER_LOCALE,
+       systemPromptCategorySlug: env.CHATWOOT_SYSTEM_PROMPT_CATEGORY_SLUG,
        knowledgeSyncIntervalMs: env.AI_KNOWLEDGE_SYNC_INTERVAL_MS,
        knowledgeRoot: env.AI_KNOWLEDGE_ROOT,
       safeFallbackText: env.AI_SAFE_FALLBACK_TEXT,

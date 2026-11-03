@@ -146,7 +146,7 @@ function removeKnownWrappers(content: string): string {
   return fence ? fence[1]!.trim() : content;
 }
 
-export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): KnowledgeDocument {
+export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle, systemPromptCategorySlug = 'system-prompt'): KnowledgeDocument {
   const content = removeKnownWrappers(article.content);
   if (!content.trim()) throw new Error('chatwoot_knowledge_empty_content');
   const sourceUpdatedAt = typeof article.updatedAt === 'number'
@@ -161,7 +161,7 @@ export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): Kn
     sourceUpdatedAt,
     position: article.position,
     categorySlug,
-    kind: categorySlug === 'system-prompt' ? 'system_prompt' : 'factual',
+    kind: categorySlug === normalizeCategorySlug(systemPromptCategorySlug) ? 'system_prompt' : 'factual',
   };
 }
 

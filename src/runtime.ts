@@ -37,6 +37,7 @@ const defaults = (c: BridgeConfig): BridgeConfig => ({
     safeFallbackText: "I'm not sure about that. Let me get someone from the JAMA team to help you.",
     escalationEnabled: true,
     systemPromptPath: 'specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md',
+     systemPromptCategorySlug: 'system-prompt',
     conversationHistoryEnabled: true,
     conversationHistoryMaxMessages: 20,
   },
@@ -110,6 +111,7 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     store: knowledgeStore,
     profileId,
     intervalMs: config.ai?.knowledgeSyncIntervalMs ?? 300000,
+     systemPromptCategorySlug: config.ai?.systemPromptCategorySlug ?? 'system-prompt',
     logger: createLogger(),
   });
 

@@ -58,6 +58,12 @@ describe('Chatwoot Help Center knowledge client', () => {
     const normalized = normalizeKnowledgeArticle(article({ categorySlug: ' System_Prompt ' }));
     expect(normalized.categorySlug).toBe('system-prompt');
     expect(normalized.kind).toBe('system_prompt');
+   });
+
+   it('classifies the configured category slug as the system prompt', () => {
+     expect(normalizeKnowledgeArticle(article({ categorySlug: 'assistant-prompt' }), 'Assistant Prompt').kind).toBe('system_prompt');
+     expect(normalizeKnowledgeArticle(article({ categorySlug: 'system-prompt' }), 'Assistant Prompt').kind).toBe('factual');
+
   });
 
   it('keeps articles without category metadata factual', () => {

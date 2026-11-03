@@ -49,6 +49,7 @@ describe('buildRuntime', () => {
         knowledgeSource: 'chatwoot',
         helpCenterSlug: 'jama-help-center',
         helpCenterLocale: 'en',
+         systemPromptCategorySlug: 'assistant-prompt',
         knowledgeSyncIntervalMs: 300000,
         knowledgeRoot: 'knowledge',
         safeFallbackText: 'fallback',
@@ -58,6 +59,7 @@ describe('buildRuntime', () => {
     expect(pipeline.knowledgeStore).toBeDefined();
     expect(pipeline.knowledgeProvider).toBeDefined();
     expect(pipeline.knowledgeSync).toBeDefined();
+     expect(pipeline.config.ai?.systemPromptCategorySlug).toBe('assistant-prompt');
   });
 
   it('keeps local mode from calling a live Help Center client', async () => {

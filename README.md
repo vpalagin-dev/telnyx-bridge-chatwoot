@@ -43,4 +43,10 @@ When `TELNYX_PUBLIC_KEY` is configured, Telnyx requests require a fresh `telnyx-
 
 Keep `OUTBOUND_MODE=fake` for all Chatwoot-originated tests. `live` is not a general send switch: it still rejects every recipient except `TEST_RECIPIENT_NUMBER`, but a matching Chatwoot outbound will call Telnyx. Do not enable it for this smoke, expose a public tunnel, or configure a Chatwoot webhook yet. The local Chatwoot API smoke procedure is in [`docs/local-chatwoot-api-smoke.md`](docs/local-chatwoot-api-smoke.md).
 
+### Chatwoot Help Center knowledge contract
+
+Set `AI_KNOWLEDGE_SOURCE=chatwoot` to use the configured published Help Center snapshot. `CHATWOOT_SYSTEM_PROMPT_CATEGORY_SLUG` defaults to `system-prompt` and identifies the one published Ama system-prompt article; exactly one matching article is required before a snapshot can activate. All other published categories are factual context. Retrieval is bounded and a no-result query falls back to the configured safe response; the guard is code-owned, and OpenAI tool calling is not used.
+
+The active snapshot is immutable for each sync and remains in service if a later sync fails. Local `specs/002-jama-ai-assistant-smoke/knowledge/ama-persona.md` remains the bootstrap/fallback prompt until the Chatwoot contract is validated. Do not remove it or perform live production changes as part of configuration work.
+
 The service intentionally provides no campaign, scheduler, batching, provisioning, analytics, CRM, AI outbound, or arbitrary-recipient API.

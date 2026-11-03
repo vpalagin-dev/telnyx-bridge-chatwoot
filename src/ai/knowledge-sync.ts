@@ -64,6 +64,7 @@ export function createKnowledgeSyncService(options: {
   store: KnowledgeStore;
   profileId: string;
   intervalMs: number;
+  systemPromptCategorySlug?: string;
   logger?: Logger;
   setTimeoutFn?: typeof setTimeout;
   clearTimeoutFn?: typeof clearTimeout;
@@ -111,7 +112,7 @@ export function createKnowledgeSyncService(options: {
 
     let documents: KnowledgeDocument[];
     try {
-      documents = stableDocuments(articles.map(normalizeKnowledgeArticle));
+      documents = stableDocuments(articles.map((article) => normalizeKnowledgeArticle(article, options.systemPromptCategorySlug ?? 'system-prompt')));
     } catch (error) {
       throw stageError('knowledge_normalize_failed', error);
     }

@@ -6,6 +6,7 @@ export type ChatwootKnowledgeArticle = {
   status: string;
   updatedAt: string | number;
   position: number;
+  categorySlug?: string;
 };
 
 export type KnowledgeDocument = {
@@ -15,6 +16,8 @@ export type KnowledgeDocument = {
   content: string;
   sourceUpdatedAt: string;
   position: number;
+  categorySlug: string;
+  kind: 'system_prompt' | 'factual';
 };
 
 export type ChatwootHelpCenterClient = {
@@ -46,7 +49,26 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function parseArticle(value: unknown): ChatwootKnowledgeArticle {
+function normalizeCategorySlug(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+  return normalized || undefined;
+}
+
+function categorySlugFromPayload(candidate: ArticlePayload): string | undefined {
+  const category = candidate.category;
+  const categorySlug = typeof category === 'object' && category !== null
+    ? normalizeCategorySlug((category as Record<string, unknown>).slug)
+    : undefined;
+  return categorySlug
+    ?? normalizeCategorySlug(candidate.category_slug)
+    ?? (typeof category === 'object' && category !== null
+      ? normalizeCategorySlug((category as Record<string, unknown>).name)
+      : undefined)
+    ?? normalizeCategorySlug(candidate.category_name);
+}
+
+export function parseArticlePayload(value: unknown): ChatwootKnowledgeArticle {
   if (typeof value !== 'object' || value === null) throw new Error('chatwoot_knowledge_invalid_article');
   const candidate = value as ArticlePayload;
   if (
@@ -63,6 +85,7 @@ function parseArticle(value: unknown): ChatwootKnowledgeArticle {
       ? candidate.position
       : Number.NaN;
   if (Number.isNaN(position)) throw new Error('chatwoot_knowledge_invalid_article');
+  const categorySlug = categorySlugFromPayload(candidate);
   return {
     id: candidate.id,
     slug: candidate.slug,
@@ -71,8 +94,11 @@ function parseArticle(value: unknown): ChatwootKnowledgeArticle {
     status: candidate.status,
     updatedAt: candidate.updated_at,
     position,
+    ...(categorySlug ? { categorySlug } : {}),
   };
 }
+
+const parseArticle = parseArticlePayload;
 
 function positiveInteger(value: unknown): value is number {
   return isFiniteNumber(value) && Number.isInteger(value) && value > 0;
@@ -126,6 +152,7 @@ export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): Kn
   const sourceUpdatedAt = typeof article.updatedAt === 'number'
     ? new Date(Math.abs(article.updatedAt) >= 1_000_000_000_000 ? article.updatedAt : article.updatedAt * 1000).toISOString()
     : article.updatedAt;
+  const categorySlug = normalizeCategorySlug(article.categorySlug) ?? '';
   return {
     sourceArticleId: article.id,
     slug: article.slug,
@@ -133,6 +160,8 @@ export function normalizeKnowledgeArticle(article: ChatwootKnowledgeArticle): Kn
     content,
     sourceUpdatedAt,
     position: article.position,
+    categorySlug,
+    kind: categorySlug === 'system-prompt' ? 'system_prompt' : 'factual',
   };
 }
 

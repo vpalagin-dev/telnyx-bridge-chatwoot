@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createChatwootHelpCenterClient,
   normalizeKnowledgeArticle,
+  parseArticlePayload,
   type ChatwootKnowledgeArticle,
 } from '../../../src/ai/chatwoot-knowledge.js';
 
@@ -33,10 +34,38 @@ const apiArticle = (overrides: Partial<ChatwootKnowledgeArticle> = {}) => {
     status: value.status,
     updated_at: value.updatedAt,
     position: value.position,
+    ...(value.categorySlug ? { category_slug: value.categorySlug } : {}),
   };
 };
 
+const apiArticlePayload = (overrides: Record<string, unknown> = {}) => ({
+  ...apiArticle(),
+  ...overrides,
+});
+
 describe('Chatwoot Help Center knowledge client', () => {
+  it('parses category.slug into normalized category metadata', () => {
+    expect(parseArticlePayload(apiArticlePayload({ category: { slug: 'system-prompt' } })).categorySlug).toBe('system-prompt');
+  });
+
+  it('normalizes category_name and classifies system prompt documents', () => {
+    const parsed = parseArticlePayload(apiArticlePayload({ category_name: 'System Prompt' }));
+    expect(parsed.categorySlug).toBe('system-prompt');
+    expect(normalizeKnowledgeArticle(parsed).kind).toBe('system_prompt');
+  });
+
+  it('normalizes category metadata before classifying direct article values', () => {
+    const normalized = normalizeKnowledgeArticle(article({ categorySlug: ' System_Prompt ' }));
+    expect(normalized.categorySlug).toBe('system-prompt');
+    expect(normalized.kind).toBe('system_prompt');
+  });
+
+  it('keeps articles without category metadata factual', () => {
+    const parsed = parseArticlePayload(apiArticlePayload());
+    expect(parsed.categorySlug).toBeUndefined();
+    expect(normalizeKnowledgeArticle(parsed).kind).toBe('factual');
+  });
+
   it('fetches every reported page and returns only published articles', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
@@ -155,6 +184,8 @@ describe('Chatwoot Help Center knowledge client', () => {
       content: 'JAMA! was founded...',
       sourceUpdatedAt: '2026-10-15T18:56:55.000Z',
       position: 10,
+      categorySlug: '',
+      kind: 'factual',
     });
     expect(normalizeKnowledgeArticle(article({ content: '```markdown\nKeep *this* punctuation!\n```' })).content).toBe('Keep *this* punctuation!');
   });

@@ -163,14 +163,48 @@ ALTER TABLE ${BRIDGE_SCHEMA}.webhook_outbox ADD COLUMN IF NOT EXISTS publication
 ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents ADD COLUMN IF NOT EXISTS category_slug text NOT NULL DEFAULT '';
 ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents ADD COLUMN IF NOT EXISTS document_kind text NOT NULL DEFAULT 'factual';
 DO $$
+DECLARE
+  column_valid boolean;
+  constraint_definition text;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'knowledge_documents_kind_check'
-      AND conrelid = '${BRIDGE_SCHEMA}.knowledge_documents'::regclass
-  ) THEN
+  SELECT a.atttypid = 'text'::regtype
+     AND a.attnotnull
+     AND d.adbin IS NOT NULL
+     AND pg_get_expr(d.adbin, d.adrelid) = quote_literal('') || '::text'
+    INTO column_valid
+    FROM pg_attribute a
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE a.attrelid = '${BRIDGE_SCHEMA}.knowledge_documents'::regclass
+     AND a.attname = 'category_slug'
+     AND NOT a.attisdropped;
+  IF NOT COALESCE(column_valid, false) THEN
+    RAISE EXCEPTION 'Incompatible migration: ${BRIDGE_SCHEMA}.knowledge_documents.category_slug must be text NOT NULL with an empty-string default';
+  END IF;
+
+  SELECT a.atttypid = 'text'::regtype
+     AND a.attnotnull
+     AND d.adbin IS NOT NULL
+     AND pg_get_expr(d.adbin, d.adrelid) = quote_literal('factual') || '::text'
+    INTO column_valid
+    FROM pg_attribute a
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE a.attrelid = '${BRIDGE_SCHEMA}.knowledge_documents'::regclass
+     AND a.attname = 'document_kind'
+     AND NOT a.attisdropped;
+  IF NOT COALESCE(column_valid, false) THEN
+    RAISE EXCEPTION 'Incompatible migration: ${BRIDGE_SCHEMA}.knowledge_documents.document_kind must be text NOT NULL DEFAULT ''factual''::text';
+  END IF;
+
+  SELECT pg_get_constraintdef(oid)
+    INTO constraint_definition
+    FROM pg_constraint
+   WHERE conname = 'knowledge_documents_kind_check'
+     AND conrelid = '${BRIDGE_SCHEMA}.knowledge_documents'::regclass;
+  IF constraint_definition IS NULL THEN
     ALTER TABLE ${BRIDGE_SCHEMA}.knowledge_documents
       ADD CONSTRAINT knowledge_documents_kind_check CHECK (document_kind IN ('system_prompt','factual'));
+  ELSIF constraint_definition IS DISTINCT FROM format('CHECK ((document_kind = ANY (ARRAY[%L::text, %L::text])))', 'system_prompt', 'factual') THEN
+    RAISE EXCEPTION 'Incompatible migration: ${BRIDGE_SCHEMA}.knowledge_documents_kind_check has definition %, expected classification check', constraint_definition;
   END IF;
 END $$;
 `;

@@ -25,15 +25,21 @@ describe('PostgresKnowledgeStore', () => {
 
   it('activates a complete document set and returns the snapshot', async () => {
     const queries: string[] = [];
+    const documentInsertParams: unknown[][] = [];
     const client = fakeClient(queries, {
       insertSnapshot: 'snapshot-1',
       activeRows: [],
+      documentInsertParams,
     });
     const store = new PostgresKnowledgeStore('postgres://unused', fakePool(client));
 
     const snapshot = await store.activateChatwootSnapshot('jama-ama-v1.3', documents, 'hash-1');
 
     expect(snapshot).toMatchObject({ id: 'snapshot-1', profileId: 'jama-ama-v1.3', source: 'chatwoot', contentHash: 'hash-1', articleCount: 2 });
+    expect(documentInsertParams).toEqual([
+      [expect.any(String), 2, 'second', 'Second', 'two', '2026-01-02T00:00:00.000Z', 2, 'faq', 'factual'],
+      [expect.any(String), 1, 'system-prompt', 'System prompt', 'one', '2026-01-01T00:00:00.000Z', 1, 'system-prompt', 'system_prompt'],
+    ]);
     expect(queries.some((query) => query.includes('category_slug, document_kind'))).toBe(true);
     expect(queries.some((query) => query.includes("SET status = 'superseded'"))).toBe(true);
     expect(queries.some((query) => query.includes("SET status = 'active'"))).toBe(true);
@@ -74,15 +80,16 @@ function fakePool(client: PoolClient): Pool {
 type ActiveSnapshot = { id: string; contentHash: string; status: 'active' | 'superseded' };
 type FakeClient = PoolClient & { activeSnapshot: ActiveSnapshot | null };
 
-function fakeClient(queries: string[], options: { insertSnapshot?: string; activeRows?: unknown[]; documentRows?: unknown[]; failDocuments?: boolean; priorActive?: boolean }): FakeClient {
+function fakeClient(queries: string[], options: { insertSnapshot?: string; activeRows?: unknown[]; documentRows?: unknown[]; failDocuments?: boolean; priorActive?: boolean; documentInsertParams?: unknown[][] }): FakeClient {
   let activeSnapshot: ActiveSnapshot | null = options.priorActive
     ? { id: 'prior-snapshot', contentHash: 'prior-hash', status: 'active' }
     : null;
   let transactionSnapshot: ActiveSnapshot | null = activeSnapshot && { ...activeSnapshot };
   const client = {
     get activeSnapshot() { return activeSnapshot; },
-    async query(sql: string) {
+    async query(sql: string, params?: unknown[]) {
       queries.push(sql);
+      if (sql.includes('INSERT INTO telnyx_bridge.knowledge_documents') && params) options.documentInsertParams?.push(params);
       if (sql === 'BEGIN') { transactionSnapshot = activeSnapshot && { ...activeSnapshot }; return { rowCount: null, rows: [] }; }
       if (sql === 'ROLLBACK') { activeSnapshot = transactionSnapshot; return { rowCount: null, rows: [] }; }
       if (sql === 'COMMIT') return { rowCount: null, rows: [] };

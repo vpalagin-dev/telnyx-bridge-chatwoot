@@ -15,31 +15,34 @@
 - `tests/integration/persistence/postgres-knowledge-store.test.ts`
   - Added system-prompt/factual metadata round-trip assertions.
 
-## Verification
+## Review-fix verification
 
-Command:
+Focused command:
 
 ```text
 npx vitest run tests/unit/persistence/postgres-knowledge-store.test.ts tests/integration/persistence/postgres-knowledge-store.test.ts
 ```
 
-Output summary:
+Result:
 
 - Unit test file: 1 passed; 4 tests passed.
 - Integration test file: skipped because `TEST_DATABASE_URL` is not set; 3 tests skipped.
 - Overall: 1 passed, 1 skipped test file; 4 passed, 3 skipped tests.
+- The activation fake now captures and asserts every document INSERT parameter, including `categorySlug` and both `system_prompt` and `factual` kinds.
 
-Command:
+Typecheck command:
 
 ```text
 npm run typecheck
 ```
 
-Result: fails in pre-existing `tests/unit/ai/knowledge-provider.test.ts` fixtures because three `KnowledgeDocument` literals do not yet include the required `categorySlug` and `kind` properties (TS2739 at lines 29, 30, and 55). No Task 2 persistence files are implicated by the compiler errors.
+Result: failed outside this scoped fix in `tests/unit/ai/knowledge-provider.test.ts` at lines 91 and 106 (`TS2554: Expected 1 arguments, but got 2`). No AI/provider files were changed for this review fix; the persistence unit and integration test command remains green/skipped as reported above.
 
 ## Decisions and concerns
 
 - Preserved transaction and advisory-lock activation ordering; metadata is inserted before the prior active snapshot is superseded.
-- Existing rows receive the factual default through the idempotent schema upgrade; fresh snapshots preserve Chatwoot classification metadata.
+- Kept migrations idempotent. After `ADD COLUMN IF NOT EXISTS`, a migration DO block validates that both legacy columns are exactly `text NOT NULL` with the required defaults and raises a clear incompatibility error otherwise.
+- The same-named kind constraint is now checked by its canonical PostgreSQL definition; a different definition fails closed instead of being accepted silently. Missing constraints are added as before.
+- Existing rows still receive the factual default through the idempotent schema upgrade; fresh snapshots preserve Chatwoot classification metadata.
 - Integration coverage remains opt-in and was explicitly skipped without `TEST_DATABASE_URL`.
-- The repository-wide typecheck remains blocked by the unrelated knowledge-provider test fixtures noted above; those fixtures were not changed to keep this commit scoped to Task 2.
+- PostgreSQL integration round-trip remains a deployment-environment verification gap because no disposable database URL was available.

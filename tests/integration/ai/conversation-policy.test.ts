@@ -248,7 +248,7 @@ describe('conversational AI policy', () => {
     expect(approvedContext).toContain('Shared answer');
   });
 
-  it('allows Chatwoot Ama to answer casual small talk without the unsupported-topic context marker', async () => {
+  it('allows natural conversation beyond a hardcoded phrase with empty factual context', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const history = new History();
@@ -260,7 +260,7 @@ describe('conversational AI policy', () => {
         return { kind: 'answer' as const, text: 'It has been a good day, thanks for asking!' };
       },
     };
-    const result = await processAiPostInbound(input('inbound-small-talk', 35, 'How was your day?'), {
+    const result = await processAiPostInbound(input('inbound-small-talk', 35, 'Tell me about your day'), {
       config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
       store,
       openai,
@@ -325,7 +325,7 @@ describe('conversational AI policy', () => {
     const openai = {
       async generate(request: { customerMessage: string; approvedContext: string }) {
         requests.push({ message: request.customerMessage, context: request.approvedContext });
-        return { kind: 'answer' as const, text: request.customerMessage === 'How was your day?'
+        return { kind: 'answer' as const, text: request.customerMessage === 'Tell me about your day'
           ? 'It has been a good day, thanks for asking!'
           : 'The next event is AfroRave River on 2026-12-12.' };
       },
@@ -343,25 +343,27 @@ describe('conversational AI policy', () => {
       knowledge,
     };
 
-    await processAiPostInbound(input('inbound-category-small-talk', 36, 'How was your day?'), deps);
+    await processAiPostInbound(input('inbound-category-small-talk', 36, 'Tell me about your day'), deps);
     await processAiPostInbound(input('inbound-category-event', 37, 'When is the next event?'), deps);
 
-    expect(requests[0]).toMatchObject({ message: 'How was your day?', context: '' });
+    expect(requests[0]).toMatchObject({ message: 'Tell me about your day', context: '' });
     expect(requests[1]?.message).toBe('When is the next event?');
     expect(requests[1]?.context).toContain('## Next Event');
     expect(requests[1]?.context).toContain('The next event is AfroRave River on 2026-12-12.');
     expect(requests[1]?.context).not.toContain('Ama System Prompt');
   });
 
-  it('marks missing factual retrieval context explicitly', async () => {
+  it('represents an unknown JAMA fact as empty approved context while retaining guardrails', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);
     const history = new History();
     const telnyx = new FakeAiTelnyxDispatcher();
     let approvedContext = '';
+    let systemInstruction = '';
     const openai = {
-      async generate(request: { approvedContext: string }) {
+      async generate(request: { approvedContext: string; systemInstruction: string }) {
         approvedContext = request.approvedContext;
+        systemInstruction = request.systemInstruction;
         return { kind: 'answer' as const, text: 'I do not have that approved fact.' };
       },
     };
@@ -383,8 +385,9 @@ describe('conversational AI policy', () => {
     });
 
     expect(result.outcome).toBe('answered');
-    expect(approvedContext).toContain('No approved factual context was found');
-    expect(approvedContext).not.toBe('');
+    expect(approvedContext).toBe('');
+    expect(systemInstruction).toContain('JAMA-specific facts');
+    expect(systemInstruction).toContain('Do not invent or guess facts');
   });
 
   it('preserves local no-knowledge-base behavior without invoking a provider', async () => {

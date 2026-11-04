@@ -3,6 +3,7 @@ import { FakeOperationalStore } from '../../helpers/fake-operational-store.js';
 import { FakeOpenAiAdapter } from '../../../src/ai/openai-fake.js';
 import { FakeAiTelnyxDispatcher } from '../../../src/ai/telnyx-dispatch.js';
 import { processAiPostInbound } from '../../../src/ai/process-ai.js';
+import { createKnowledgeProvider } from '../../../src/ai/knowledge-provider.js';
 import type { BridgeConfig } from '../../../src/config/env.js';
 import type { ChatwootAiHistoryWriter } from '../../../src/ai/types.js';
 
@@ -279,6 +280,77 @@ describe('conversational AI policy', () => {
     expect(result.outcome).toBe('answered');
     expect(approvedContext).toBe('');
     expect(telnyx.calls[0]?.text).toBe('It has been a good day, thanks for asking!');
+  });
+
+  it('retrieves only the article-backed Event Details category while leaving casual small talk uncontextualized', async () => {
+    const activeKnowledge = {
+      snapshot: {
+        id: 'snapshot-1',
+        profileId: 'profile-1',
+        source: 'chatwoot' as const,
+        contentHash: 'hash-1',
+        articleCount: 2,
+        activatedAt: '2026-11-03T00:00:00.000Z',
+      },
+      documents: [
+        {
+          sourceArticleId: 1,
+          slug: 'ama-system-prompt',
+          title: 'Ama System Prompt',
+          content: 'Answer naturally as Ama.',
+          sourceUpdatedAt: '2026-11-03T00:00:00.000Z',
+          position: 0,
+          categorySlug: 'system-prompt',
+          kind: 'system_prompt' as const,
+        },
+        {
+          sourceArticleId: 2,
+          slug: 'next-event',
+          title: 'Next Event',
+          content: 'The next event is AfroRave River on 2026-12-12.',
+          sourceUpdatedAt: '2026-11-03T00:00:00.000Z',
+          position: 1,
+          categorySlug: 'event-details',
+          kind: 'factual' as const,
+        },
+      ],
+    };
+    const knowledge = createKnowledgeProvider({
+      source: 'chatwoot',
+      profileId: 'profile-1',
+      localRoot: 'unused',
+      store: { getActiveKnowledge: vi.fn(async () => activeKnowledge) } as any,
+    });
+    const requests: Array<{ message: string; context: string }> = [];
+    const openai = {
+      async generate(request: { customerMessage: string; approvedContext: string }) {
+        requests.push({ message: request.customerMessage, context: request.approvedContext });
+        return { kind: 'answer' as const, text: request.customerMessage === 'How was your day?'
+          ? 'It has been a good day, thanks for asking!'
+          : 'The next event is AfroRave River on 2026-12-12.' };
+      },
+    };
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const deps = {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge,
+    };
+
+    await processAiPostInbound(input('inbound-category-small-talk', 36, 'How was your day?'), deps);
+    await processAiPostInbound(input('inbound-category-event', 37, 'When is the next event?'), deps);
+
+    expect(requests[0]).toMatchObject({ message: 'How was your day?', context: '' });
+    expect(requests[1]?.message).toBe('When is the next event?');
+    expect(requests[1]?.context).toContain('## Next Event');
+    expect(requests[1]?.context).toContain('The next event is AfroRave River on 2026-12-12.');
+    expect(requests[1]?.context).not.toContain('Ama System Prompt');
   });
 
   it('marks missing factual retrieval context explicitly', async () => {

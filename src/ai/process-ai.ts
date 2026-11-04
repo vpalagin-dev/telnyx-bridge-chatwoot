@@ -11,6 +11,11 @@ import { createLogger } from '../observability/logger.js';
 import { composeAmaSystemInstruction, loadAmaSystemPrompt } from './load-system-prompt.js';
 
 const NO_APPROVED_FACTUAL_CONTEXT = '[No approved factual context was found for this customer message.]';
+const CASUAL_SMALL_TALK = /^(?:hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|how are you(?: doing)?|how was your day|how is your day|what(?:'s| is) up)[?!., ]*$/i;
+
+function isCasualSmallTalk(message: string): boolean {
+  return CASUAL_SMALL_TALK.test(message.trim());
+}
 
 const logger = createLogger();
 const audit = (event: string, details: object = {}) => logger.info({ component: 'ai', event, ...details }, 'ai lifecycle');
@@ -135,7 +140,7 @@ export async function processAiPostInbound(
       maxOutputTokens: ai.maxOutputTokens,
       systemInstruction,
       eventId,
-      approvedContext: useChatwootPrompt && !knowledge.eventMarkdown.trim() && !knowledge.sharedMarkdown.trim()
+      approvedContext: useChatwootPrompt && !knowledge.eventMarkdown.trim() && !knowledge.sharedMarkdown.trim() && !isCasualSmallTalk(input.customerMessage)
         ? NO_APPROVED_FACTUAL_CONTEXT
         : `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`.trim(),
       customerMessage: input.customerMessage,

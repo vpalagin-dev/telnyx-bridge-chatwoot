@@ -225,7 +225,7 @@ describe('conversational AI policy', () => {
     const load = vi.fn(async (eventId: string, _query?: string) => ({
       eventId,
       event: { status: 'active', effective_from: '', review_by: '' },
-      eventMarkdown: 'Chatwoot snapshot answer',
+      eventMarkdown: '## Event Details\n\nThe next event is AfroRave River on 2026-12-12.',
       sharedMarkdown: 'Shared answer',
       systemPrompt: 'Chatwoot Ama persona',
     }));
@@ -238,11 +238,47 @@ describe('conversational AI policy', () => {
       knowledge: { load },
     };
 
-    const result = await processAiPostInbound(input('inbound-provider', 34), deps);
+    const result = await processAiPostInbound(input('inbound-provider', 34, 'When is the next event?'), deps);
 
     expect(result.outcome).toBe('answered');
-    expect(load).toHaveBeenCalledWith('jama-ama-v1.3', 'Where is the venue?');
-    expect(approvedContext).toBe('Chatwoot snapshot answer\nShared answer');
+    expect(load).toHaveBeenCalledWith('jama-ama-v1.3', 'When is the next event?');
+    expect(approvedContext).toContain('## Event Details');
+    expect(approvedContext).toContain('The next event is AfroRave River on 2026-12-12.');
+    expect(approvedContext).toContain('Shared answer');
+  });
+
+  it('allows Chatwoot Ama to answer casual small talk without the unsupported-topic context marker', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    let approvedContext = 'unset';
+    const openai = {
+      async generate(request: { approvedContext: string }) {
+        approvedContext = request.approvedContext;
+        return { kind: 'answer' as const, text: 'It has been a good day, thanks for asking!' };
+      },
+    };
+    const result = await processAiPostInbound(input('inbound-small-talk', 35, 'How was your day?'), {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot' as const } },
+      store,
+      openai,
+      history,
+      telnyx,
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: '',
+          sharedMarkdown: '',
+          systemPrompt: 'Chatwoot Ama persona',
+        })),
+      },
+    });
+
+    expect(result.outcome).toBe('answered');
+    expect(approvedContext).toBe('');
+    expect(telnyx.calls[0]?.text).toBe('It has been a good day, thanks for asking!');
   });
 
   it('marks missing factual retrieval context explicitly', async () => {

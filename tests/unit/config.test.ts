@@ -34,6 +34,7 @@ describe('loadConfig', () => {
       helpCenterSlug: 'jama-help-center',
       helpCenterLocale: 'en',
       systemPromptCategorySlug: 'system-prompt',
+      openAiBaseUrl: 'https://api.openai.com/v1',
       knowledgeSyncIntervalMs: 300000,
     });
   });
@@ -45,6 +46,7 @@ describe('loadConfig', () => {
       CHATWOOT_HELP_CENTER_SLUG: 'custom-help',
       CHATWOOT_HELP_CENTER_LOCALE: 'fr',
       CHATWOOT_SYSTEM_PROMPT_CATEGORY_SLUG: 'assistant-prompt',
+      OPENAI_BASE_URL: 'https://openrouter.ai/api/v1',
       AI_KNOWLEDGE_SYNC_INTERVAL_MS: '120000',
     });
 
@@ -53,6 +55,7 @@ describe('loadConfig', () => {
       helpCenterSlug: 'custom-help',
       helpCenterLocale: 'fr',
       systemPromptCategorySlug: 'assistant-prompt',
+      openAiBaseUrl: 'https://openrouter.ai/api/v1',
       knowledgeSyncIntervalMs: 120000,
     });
   });

@@ -30,6 +30,7 @@ const environmentSchema = z
     AI_PROVIDER_MODE: z.enum(['fake', 'live']).default('fake'),
     AI_LIVE_OPENAI_ENABLED: bool(false),
     OPENAI_API_KEY: z.preprocess(blank, z.string().min(1).optional()),
+     OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
     OPENAI_MODEL: z.string().min(1).default('gpt-4o-mini'),
     OPENAI_MAX_INPUT_TOKENS: z.coerce.number().int().positive().max(8192).default(2048),
     OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(2048).default(256),
@@ -123,6 +124,7 @@ export type BridgeConfig = {
     providerMode: 'fake' | 'live';
     liveOpenAiEnabled: boolean;
     openAiApiKey?: string;
+    openAiBaseUrl?: string;
     model: string;
     maxInputTokens: number;
     maxOutputTokens: number;
@@ -223,6 +225,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       providerMode: env.AI_PROVIDER_MODE,
       liveOpenAiEnabled: env.AI_LIVE_OPENAI_ENABLED,
       ...(env.OPENAI_API_KEY ? { openAiApiKey: env.OPENAI_API_KEY } : {}),
+      openAiBaseUrl: env.OPENAI_BASE_URL,
       model: env.OPENAI_MODEL,
       maxInputTokens: env.OPENAI_MAX_INPUT_TOKENS,
       maxOutputTokens: env.OPENAI_MAX_OUTPUT_TOKENS,

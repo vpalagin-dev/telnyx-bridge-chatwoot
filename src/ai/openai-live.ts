@@ -4,7 +4,7 @@ import type { OpenAiAdapter, OpenAiDecision, OpenAiRequest } from './types.js';
 type Fetcher = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export class LiveOpenAiAdapter implements OpenAiAdapter {
-  constructor(private readonly o: { apiKey: string; model: string; timeoutMs: number; fetcher?: Fetcher }) {}
+  constructor(private readonly o: { apiKey: string; baseUrl?: string; model: string; timeoutMs: number; fetcher?: Fetcher }) {}
 
   async generate(request: OpenAiRequest): Promise<OpenAiDecision> {
     if (request.customerMessage.length > request.maxInputTokens * 4) {
@@ -13,7 +13,8 @@ export class LiveOpenAiAdapter implements OpenAiAdapter {
     const fetcher = this.o.fetcher ?? fetch;
     const messages = buildOpenAiChatMessages(request, request.conversationTurns ?? []);
     try {
-      const response = await fetcher('https://api.openai.com/v1/chat/completions', {
+      const baseUrl = (this.o.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+      const response = await fetcher(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${this.o.apiKey}`,

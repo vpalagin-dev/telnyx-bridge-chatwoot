@@ -29,6 +29,7 @@ const defaults = (c: BridgeConfig): BridgeConfig => ({
     enabled: false,
     providerMode: 'fake',
     liveOpenAiEnabled: false,
+    openAiBaseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
     maxInputTokens: 2048,
     maxOutputTokens: 256,
@@ -85,7 +86,7 @@ export function createRuntimePipeline(raw: BridgeConfig): RuntimePipeline {
     : chatwoot;
   const telnyx = createTelnyxClient(config);
   const openai = config.ai!.enabled && config.ai!.providerMode === 'live' && config.ai!.liveOpenAiEnabled && config.ai!.openAiApiKey
-    ? new LiveOpenAiAdapter({ apiKey: config.ai!.openAiApiKey, model: config.ai!.model, timeoutMs: config.ai!.timeoutMs })
+    ? new LiveOpenAiAdapter({ apiKey: config.ai!.openAiApiKey, baseUrl: config.ai!.openAiBaseUrl ?? 'https://api.openai.com/v1', model: config.ai!.model, timeoutMs: config.ai!.timeoutMs })
     : new FakeOpenAiAdapter({ kind: 'fallback', text: config.ai!.safeFallbackText, escalate: true });
   const aiTelnyx = createAiTelnyxDispatcher(config, telnyx, operationalStore);
   const knowledgeSource = config.ai?.knowledgeSource ?? 'local';

@@ -19,10 +19,12 @@ function extractMessageText(value: unknown): string | undefined {
   return text || undefined;
 }
 
+const MAX_PROVIDER_RETRIES = 1;
+
 export class LiveOpenAiAdapter implements OpenAiAdapter {
   constructor(private readonly o: { apiKey: string; baseUrl?: string; model: string; timeoutMs: number; fetcher?: Fetcher }) {}
 
-  async generate(request: OpenAiRequest): Promise<OpenAiDecision> {
+  async generate(request: OpenAiRequest, retryCount = 0): Promise<OpenAiDecision> {
     if (request.customerMessage.length > request.maxInputTokens * 4) {
       return { kind: 'error', reason: 'malformed' };
     }
@@ -43,16 +45,21 @@ export class LiveOpenAiAdapter implements OpenAiAdapter {
           max_tokens: request.maxOutputTokens,
         }),
       });
-      if (!response.ok) return { kind: 'error', reason: 'provider_error', providerStatus: response.status };
+      if (!response.ok) {
+        if (retryCount < MAX_PROVIDER_RETRIES) return this.generate(request, retryCount + 1);
+        return { kind: 'error', reason: 'provider_error', providerStatus: response.status };
+      }
       const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
       const content = body?.choices?.[0]?.message?.content;
       const text = extractMessageText(content);
       if (!text) {
         const contentType = Array.isArray(content) ? 'array' : content === null ? 'null' : typeof content;
+        if (retryCount < MAX_PROVIDER_RETRIES) return this.generate(request, retryCount + 1);
         return { kind: 'error', reason: 'malformed', providerDetail: `message_content_${contentType}` };
       }
       return { kind: 'answer', text };
     } catch (error) {
+      if (retryCount < MAX_PROVIDER_RETRIES) return this.generate(request, retryCount + 1);
       return {
         kind: 'error',
         reason: error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'provider_error',

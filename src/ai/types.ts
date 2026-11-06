@@ -19,7 +19,7 @@ export type OpenAiRequest = {
 export type ChatwootConversationHistoryReader = {
   listConversationMessages(conversationId: number): Promise<ChatwootHistoryMessage[]>;
 };
-export type OpenAiDecision = { kind:'answer'; text:string } | { kind:'fallback'; text:string; escalate:true } | { kind:'error'; reason:'timeout'|'provider_error'|'malformed' };
+export type OpenAiDecision = { kind:'answer'; text:string } | { kind:'fallback'; text:string; escalate:true } | { kind:'error'; reason:'timeout'|'provider_error'|'malformed'; providerStatus?: number };
 export interface OpenAiAdapter { generate(request:OpenAiRequest):Promise<OpenAiDecision> }
 export type AiHistoryMetadata = { ai_generated:true; ai_decision_id:string; event_id:string; outcome:Extract<AiOutcome,'answered'|'fallback'|'escalated'> };
 export type ChatwootAiHistoryMessage = { id:number };

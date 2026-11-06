@@ -206,7 +206,17 @@ export async function processAiPostInbound(
     await d.store.recordAiTelnyxSubmission(decisionId, submission.actionId, submission.telnyxMessageId);
     if (isFallback) {
       await d.store.setAiDecisionOutcome(decisionId, { outcome: 'fallback', status: 'completed', state: 'waiting_for_human' });
-      audit('fallback_sent', { aiDecisionId: decisionId, conversationId: input.conversationId, telnyxMessageId: submission.telnyxMessageId });
+      audit('fallback_sent', {
+        aiDecisionId: decisionId,
+        conversationId: input.conversationId,
+        telnyxMessageId: submission.telnyxMessageId,
+        fallbackReason: raw.kind === 'error'
+          ? raw.reason
+          : raw.kind === 'fallback'
+            ? 'model_fallback'
+            : 'response_validation',
+        ...(raw.kind === 'error' && raw.providerStatus !== undefined ? { providerStatus: raw.providerStatus } : {}),
+      });
       return { outcome: 'fallback', aiDecisionId: decisionId, state: 'waiting_for_human' };
     }
     audit('answered', { aiDecisionId: decisionId, conversationId: input.conversationId, telnyxMessageId: submission.telnyxMessageId });

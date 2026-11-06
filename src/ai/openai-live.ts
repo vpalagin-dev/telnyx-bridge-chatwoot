@@ -27,7 +27,7 @@ export class LiveOpenAiAdapter implements OpenAiAdapter {
           max_tokens: request.maxOutputTokens,
         }),
       });
-      if (!response.ok) return { kind: 'error', reason: 'provider_error' };
+      if (!response.ok) return { kind: 'error', reason: 'provider_error', providerStatus: response.status };
       const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
       const text = body?.choices?.[0]?.message?.content;
       if (typeof text !== 'string' || !text.trim()) return { kind: 'error', reason: 'malformed' };

@@ -3,6 +3,22 @@ import type { OpenAiAdapter, OpenAiDecision, OpenAiRequest } from './types.js';
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
+type MessageContentPart = { type?: unknown; text?: unknown };
+
+function extractMessageText(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (!Array.isArray(value)) return undefined;
+  const text = value
+    .map((part: unknown) => {
+      if (typeof part === 'string') return part;
+      if (typeof part === 'object' && part !== null && typeof (part as MessageContentPart).text === 'string') return (part as MessageContentPart).text as string;
+      return '';
+    })
+    .join('')
+    .trim();
+  return text || undefined;
+}
+
 export class LiveOpenAiAdapter implements OpenAiAdapter {
   constructor(private readonly o: { apiKey: string; baseUrl?: string; model: string; timeoutMs: number; fetcher?: Fetcher }) {}
 
@@ -29,8 +45,12 @@ export class LiveOpenAiAdapter implements OpenAiAdapter {
       });
       if (!response.ok) return { kind: 'error', reason: 'provider_error', providerStatus: response.status };
       const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
-      const text = body?.choices?.[0]?.message?.content;
-      if (typeof text !== 'string' || !text.trim()) return { kind: 'error', reason: 'malformed' };
+      const content = body?.choices?.[0]?.message?.content;
+      const text = extractMessageText(content);
+      if (!text) {
+        const contentType = Array.isArray(content) ? 'array' : content === null ? 'null' : typeof content;
+        return { kind: 'error', reason: 'malformed', providerDetail: `message_content_${contentType}` };
+      }
       return { kind: 'answer', text };
     } catch (error) {
       return {

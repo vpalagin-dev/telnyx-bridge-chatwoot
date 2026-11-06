@@ -216,6 +216,7 @@ export async function processAiPostInbound(
             ? 'model_fallback'
             : 'response_validation',
         ...(raw.kind === 'error' && raw.providerStatus !== undefined ? { providerStatus: raw.providerStatus } : {}),
+        ...(raw.kind === 'error' && raw.providerDetail ? { providerDetail: raw.providerDetail } : {}),
       });
       return { outcome: 'fallback', aiDecisionId: decisionId, state: 'waiting_for_human' };
     }

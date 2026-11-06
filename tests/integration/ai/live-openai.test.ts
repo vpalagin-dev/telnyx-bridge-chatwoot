@@ -33,6 +33,19 @@ describe('opt-in local live AI', () => {
     })).resolves.toEqual({ kind: 'answer', text: 'ok' });
   });
 
+  it('normalizes OpenAI-compatible text-part content responses', async () => {
+    const a = new LiveOpenAiAdapter({
+      apiKey: 'test-only', model: 'gpt-4o-mini', timeoutMs: 50,
+      fetcher: async () => ({ ok: true, status: 200, json: async () => ({
+        choices: [{ message: { content: [{ type: 'text', text: 'hello from parts' }] } }],
+      }) }),
+    });
+    await expect(a.generate({
+      model: 'gpt-4o-mini', maxInputTokens: 10, maxOutputTokens: 10, systemInstruction: 'fixed',
+      eventId: 'event-afrorave-river', approvedContext: 'demo/test data', customerMessage: 'question', safeFallbackText: 'fallback',
+    })).resolves.toEqual({ kind: 'answer', text: 'hello from parts' });
+  });
+
   it('retains provider HTTP status for diagnostics', async () => {
     const a = new LiveOpenAiAdapter({
       apiKey: 'test-only', model: 'gpt-4o-mini', timeoutMs: 50,

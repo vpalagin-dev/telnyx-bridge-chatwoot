@@ -6,6 +6,7 @@ describe('loadAmaSystemPrompt', () => {
     const result = composeAmaSystemInstruction('You are Ama.');
     expect(result).toContain('You are Ama.');
     expect(result).toContain('approved knowledge');
+    expect(result).toContain('do not use a generic fallback message');
   });
 
   it('loads persona from the default repository file', async () => {

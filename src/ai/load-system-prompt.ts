@@ -3,7 +3,8 @@ import { isAbsolute, resolve } from 'node:path';
 
 const KNOWLEDGE_GUARD =
   'JAMA-specific facts (events, tickets, team, policies, venues, pricing): use only the approved knowledge provided with the customer message. '
-  + 'Do not invent or guess facts. For casual conversation, respond as Ama without using the knowledge base, but never fabricate JAMA details or commitments.';
+  + 'Do not invent or guess facts. For casual conversation, respond as Ama without using the knowledge base, but never fabricate JAMA details or commitments. '
+  + 'If approved knowledge does not contain a JAMA-specific fact, do not use a generic fallback message; respond naturally that the information is not confirmed and offer human help when appropriate.';
 
 export function composeAmaSystemInstruction(persona: string): string {
   const trimmed = persona.trim();

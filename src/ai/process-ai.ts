@@ -10,6 +10,8 @@ import { AiReplyRateLimiter, DEFAULT_AI_REPLY_LIMITS } from './rate-limit.js';
 import { createLogger } from '../observability/logger.js';
 import { composeAmaSystemInstruction, loadAmaSystemPrompt } from './load-system-prompt.js';
 
+const NATURAL_UNKNOWN_FACT_RESPONSE = 'I’m not seeing confirmed information about that yet 🧡';
+
 const logger = createLogger();
 const audit = (event: string, details: object = {}) => logger.info({ component: 'ai', event, ...details }, 'ai lifecycle');
 
@@ -125,6 +127,7 @@ export async function processAiPostInbound(
     }
   }
 
+  const approvedContext = `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`.trim();
   let raw;
   try {
     raw = await d.openai.generate({
@@ -133,7 +136,7 @@ export async function processAiPostInbound(
       maxOutputTokens: ai.maxOutputTokens,
       systemInstruction,
       eventId,
-      approvedContext: `${knowledge.eventMarkdown}\n${knowledge.sharedMarkdown}`.trim(),
+      approvedContext,
       customerMessage: input.customerMessage,
       safeFallbackText: ai.safeFallbackText,
       ...(conversationTurns.length > 0 ? { conversationTurns } : {}),
@@ -146,7 +149,14 @@ export async function processAiPostInbound(
   const validated = validateAiDecision(raw, { fallback: ai.safeFallbackText });
   let replyText: string;
   let isFallback = false;
-  if (validated.kind === 'error' || validated.kind === 'fallback') {
+  if (
+    useChatwootPrompt
+    && !approvedContext
+    && validated.kind === 'answer'
+    && validated.text.trim() === ai.safeFallbackText.trim()
+  ) {
+    replyText = NATURAL_UNKNOWN_FACT_RESPONSE;
+  } else if (validated.kind === 'error' || validated.kind === 'fallback') {
     replyText = ai.safeFallbackText;
     isFallback = true;
   } else {

@@ -390,6 +390,34 @@ describe('conversational AI policy', () => {
     expect(systemInstruction).toContain('Do not invent or guess facts');
   });
 
+  it('rewrites a model-generated generic fallback into a natural unknown-fact reply', async () => {
+    const store = new FakeOperationalStore(':memory:');
+    stores.push(store);
+    const history = new History();
+    const telnyx = new FakeAiTelnyxDispatcher();
+    const safeFallbackText = "I'm not sure about that. Let me get someone from the JAMA team to help you.";
+    const result = await processAiPostInbound(input('inbound-model-generic-fallback', 36, 'What is the ticket price for an unannounced event?'), {
+      config: { ...config, ai: { ...config.ai!, knowledgeSource: 'chatwoot', safeFallbackText } },
+      store,
+      openai: { generate: async () => ({ kind: 'answer' as const, text: safeFallbackText }) },
+      history,
+      telnyx,
+      knowledge: {
+        load: vi.fn(async () => ({
+          eventId: 'jama-ama-v1.3',
+          event: { status: 'active', effective_from: '', review_by: '' },
+          eventMarkdown: '',
+          sharedMarkdown: '',
+          systemPrompt: 'Chatwoot Ama persona',
+        })),
+      },
+    });
+
+    expect(result.outcome).toBe('answered');
+    expect(telnyx.calls[0]?.text).toContain("I’m not seeing confirmed information about that yet");
+    expect(telnyx.calls[0]?.text).not.toBe(safeFallbackText);
+  });
+
   it('preserves local no-knowledge-base behavior without invoking a provider', async () => {
     const store = new FakeOperationalStore(':memory:');
     stores.push(store);
